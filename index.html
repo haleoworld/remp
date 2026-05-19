@@ -1,0 +1,1980 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)" />
+<meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)" />
+<title>Showings</title>
+<link rel="manifest" href='data:application/manifest+json,{"name":"Showings","short_name":"Showings","start_url":".","display":"standalone","background_color":"%23ffffff","theme_color":"%23000000","icons":[{"src":"data:image/svg+xml;utf8,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 192 192%22><rect width=%22192%22 height=%22192%22 rx=%2240%22 fill=%22%23000000%22/><text x=%2296%22 y=%22132%22 font-size=%22112%22 text-anchor=%22middle%22 fill=%22white%22 font-family=%22-apple-system,sans-serif%22 font-weight=%22800%22>S</text></svg>","sizes":"192x192","type":"image/svg+xml"}]}' />
+<style>
+  :root {
+    --bg: #ffffff;
+    --bg-soft: #f7f9f9;
+    --text: #0f1419;
+    --text-soft: #536471;
+    --muted: #71767b;
+    --border: #eff3f4;
+    --border-strong: #cfd9de;
+    --accent: #0f1419;
+    --accent-text: #ffffff;
+    --good: #00ba7c;
+    --warn: #ff9e1c;
+    --bad: #f4212e;
+    --hover: #f7f9f9;
+    --header-bg: rgba(255,255,255,0.85);
+    --shadow: 0 0 0 1px rgba(0,0,0,.04);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #000000;
+      --bg-soft: #16181c;
+      --text: #e7e9ea;
+      --text-soft: #71767b;
+      --muted: #71767b;
+      --border: #2f3336;
+      --border-strong: #3e4144;
+      --accent: #ffffff;
+      --accent-text: #0f1419;
+      --hover: #16181c;
+      --header-bg: rgba(0,0,0,0.85);
+    }
+  }
+
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    margin: 0; padding: 0;
+    background: var(--bg); color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Inter", Roboto, "Helvetica Neue", sans-serif;
+    font-size: 15px; line-height: 1.4;
+    -webkit-font-smoothing: antialiased;
+    overscroll-behavior: none;
+  }
+  body { min-height: 100vh; min-height: 100dvh; }
+  a { color: inherit; text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  button {
+    font: inherit; color: inherit;
+    background: none; border: none; padding: 0;
+    cursor: pointer; -webkit-appearance: none;
+  }
+  input, textarea, select {
+    font: inherit; color: var(--text);
+    background: var(--bg);
+    border: 1px solid var(--border-strong);
+    border-radius: 4px;
+    padding: 12px 14px;
+    width: 100%;
+    -webkit-appearance: none;
+  }
+  textarea { resize: vertical; min-height: 80px; }
+  input:focus, textarea:focus, select:focus {
+    outline: none; border-color: var(--accent);
+  }
+
+  /* App shell */
+  .app {
+    max-width: 600px;
+    margin: 0 auto;
+    min-height: 100vh; min-height: 100dvh;
+    border-left: 1px solid var(--border);
+    border-right: 1px solid var(--border);
+    position: relative;
+  }
+  @media (max-width: 640px) { .app { border: none; } }
+
+  /* Header */
+  .top {
+    position: sticky; top: 0; z-index: 20;
+    background: var(--header-bg);
+    backdrop-filter: saturate(180%) blur(12px);
+    -webkit-backdrop-filter: saturate(180%) blur(12px);
+    border-bottom: 1px solid var(--border);
+    padding: 12px 16px;
+    padding-top: max(12px, env(safe-area-inset-top));
+    display: flex; align-items: center; gap: 8px;
+    min-height: 53px;
+  }
+  .top h1 { margin: 0; font-size: 20px; font-weight: 800; letter-spacing: -0.01em; flex: 1; }
+  .top .icon-btn {
+    width: 36px; height: 36px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 18px;
+    transition: background .15s;
+  }
+  .top .icon-btn:hover { background: var(--hover); }
+  .sync-dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: var(--muted); flex-shrink: 0;
+  }
+  .sync-dot.live { background: var(--good); animation: pulse 2s infinite; }
+  .sync-dot.syncing { background: var(--warn); animation: pulse .8s infinite; }
+  .sync-dot.error { background: var(--bad); }
+  @keyframes pulse {
+    0%,100% { opacity: 1; }
+    50% { opacity: 0.4; }
+  }
+
+  /* Body */
+  main { padding-bottom: 96px; }
+
+  /* Feed item */
+  .feed-item {
+    display: flex; gap: 12px;
+    padding: 14px 16px;
+    border-bottom: 1px solid var(--border);
+    cursor: pointer;
+    transition: background .12s;
+  }
+  .feed-item:active { background: var(--hover); }
+  @media (hover: hover) { .feed-item:hover { background: var(--hover); } }
+  .feed-item .avatar {
+    width: 44px; height: 44px; border-radius: 50%;
+    background: var(--bg-soft);
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 700; font-size: 16px; color: var(--text-soft);
+    flex-shrink: 0;
+  }
+  .feed-item .body { flex: 1; min-width: 0; }
+  .feed-item .body h3 { margin: 0; font-size: 15px; font-weight: 700; letter-spacing: -0.005em; }
+  .feed-item .body .sub { color: var(--text-soft); font-size: 14px; margin-top: 2px; }
+  .feed-item .body .meta { color: var(--muted); font-size: 13px; margin-top: 4px; display: flex; gap: 12px; flex-wrap: wrap; }
+  .feed-item .right { flex-shrink: 0; text-align: right; }
+
+  /* Listing card (also feed style) */
+  .listing-feed {
+    padding: 14px 16px;
+    border-bottom: 1px solid var(--border);
+    cursor: pointer;
+    transition: background .12s;
+  }
+  .listing-feed:active { background: var(--hover); }
+  @media (hover: hover) { .listing-feed:hover { background: var(--hover); } }
+  .listing-feed .head { display: flex; gap: 12px; align-items: flex-start; }
+  .listing-feed .head .addr { flex: 1; min-width: 0; }
+  .listing-feed .head .addr h3 { margin: 0; font-size: 15px; font-weight: 700; line-height: 1.3; }
+  .listing-feed .head .addr .city { color: var(--text-soft); font-size: 14px; margin-top: 2px; }
+  .listing-feed .head .price { font-size: 18px; font-weight: 800; letter-spacing: -0.01em; text-align: right; }
+  .listing-feed .specs { display: flex; gap: 14px; flex-wrap: wrap; margin-top: 8px; color: var(--text-soft); font-size: 14px; }
+  .listing-feed .brief { color: var(--text-soft); font-size: 14px; line-height: 1.4; margin-top: 6px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .listing-feed .actions { display: flex; gap: 6px; margin-top: 10px; align-items: center; }
+
+  /* Score badge */
+  .score {
+    display: inline-flex; align-items: center; justify-content: center;
+    min-width: 44px; height: 28px; padding: 0 10px;
+    border-radius: 999px;
+    font-weight: 700; font-size: 13px;
+    background: var(--bg-soft); color: var(--text-soft); border: 1px solid var(--border);
+  }
+  .score.good { background: rgba(0,186,124,.1); color: var(--good); border-color: rgba(0,186,124,.25); }
+  .score.warn { background: rgba(255,158,28,.1); color: var(--warn); border-color: rgba(255,158,28,.25); }
+  .score.bad { background: rgba(244,33,46,.1); color: var(--bad); border-color: rgba(244,33,46,.25); }
+
+  /* Pills */
+  .pill {
+    display: inline-flex; align-items: center;
+    padding: 2px 10px; border-radius: 999px;
+    font-size: 12px; font-weight: 600;
+    background: var(--bg-soft); color: var(--text-soft);
+    border: 1px solid var(--border);
+  }
+  .pill.dark { background: var(--accent); color: var(--accent-text); border: none; }
+  .pill.good { background: rgba(0,186,124,.1); color: var(--good); border-color: rgba(0,186,124,.25); }
+  .pill.warn { background: rgba(255,158,28,.1); color: var(--warn); border-color: rgba(255,158,28,.25); }
+  .pill.bad { background: rgba(244,33,46,.1); color: var(--bad); border-color: rgba(244,33,46,.25); }
+
+  /* Buttons */
+  .btn {
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    padding: 10px 18px;
+    border-radius: 999px;
+    background: var(--accent); color: var(--accent-text);
+    font-weight: 700; font-size: 14px; letter-spacing: -0.005em;
+    transition: opacity .15s, transform .05s;
+    white-space: nowrap;
+  }
+  .btn:hover { opacity: 0.88; }
+  .btn:active { transform: scale(0.98); }
+  .btn.small { padding: 6px 14px; font-size: 13px; }
+  .btn.ghost { background: transparent; color: var(--text); border: 1px solid var(--border-strong); }
+  .btn.ghost:hover { background: var(--hover); }
+  .btn.danger { background: var(--bad); color: white; }
+  .btn.link { background: none; color: var(--text); padding: 6px 10px; text-decoration: underline; font-weight: 600; }
+  .btn.full { width: 100%; }
+
+  /* FAB */
+  .fab {
+    position: fixed;
+    right: max(16px, calc(50vw - 284px));
+    bottom: max(86px, calc(72px + env(safe-area-inset-bottom)));
+    width: 56px; height: 56px; border-radius: 50%;
+    background: var(--accent); color: var(--accent-text);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 28px; font-weight: 300; line-height: 1;
+    z-index: 15;
+    box-shadow: 0 4px 14px rgba(0,0,0,.18);
+    transition: transform .12s;
+  }
+  .fab:hover { transform: scale(1.06); }
+  .fab:active { transform: scale(0.96); }
+
+  /* Bottom tabs */
+  nav.tabs {
+    position: fixed; bottom: 0; left: 50%; transform: translateX(-50%);
+    width: 100%; max-width: 600px;
+    background: var(--header-bg);
+    backdrop-filter: saturate(180%) blur(12px);
+    -webkit-backdrop-filter: saturate(180%) blur(12px);
+    border-top: 1px solid var(--border);
+    display: flex;
+    z-index: 14;
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  nav.tabs button {
+    flex: 1;
+    padding: 10px 0 10px;
+    display: flex; flex-direction: column; align-items: center; gap: 2px;
+    color: var(--muted);
+    transition: color .12s;
+  }
+  nav.tabs button.active { color: var(--text); }
+  nav.tabs .tab-icon { font-size: 22px; line-height: 1; }
+  nav.tabs .tab-label { font-size: 11px; font-weight: 700; letter-spacing: 0.01em; }
+
+  /* Modal */
+  .modal-backdrop {
+    position: fixed; inset: 0;
+    background: rgba(0,0,0,0.6);
+    z-index: 100;
+    display: none;
+    align-items: center; justify-content: center;
+    padding: 0;
+  }
+  .modal-backdrop.open { display: flex; }
+  .modal {
+    background: var(--bg); color: var(--text);
+    width: 100%; max-width: 600px; max-height: 90vh;
+    border-radius: 16px;
+    display: flex; flex-direction: column;
+    overflow: hidden;
+  }
+  @media (max-width: 640px) {
+    .modal-backdrop { padding: 0; align-items: stretch; }
+    .modal { border-radius: 0; max-height: 100vh; height: 100dvh; }
+  }
+  .modal-header {
+    border-bottom: 1px solid var(--border);
+    padding: 12px 16px;
+    padding-top: max(12px, env(safe-area-inset-top));
+    display: flex; align-items: center; gap: 8px;
+    min-height: 53px; flex-shrink: 0;
+  }
+  .modal-header h2 { margin: 0; font-size: 18px; font-weight: 800; flex: 1; }
+  .modal-header .icon-btn {
+    width: 36px; height: 36px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 20px;
+    transition: background .15s;
+  }
+  .modal-header .icon-btn:hover { background: var(--hover); }
+  .modal-body { flex: 1; overflow-y: auto; padding: 16px; -webkit-overflow-scrolling: touch; }
+  .modal-footer {
+    border-top: 1px solid var(--border);
+    padding: 10px 16px;
+    padding-bottom: max(10px, env(safe-area-inset-bottom));
+    display: flex; gap: 8px; align-items: center;
+    flex-shrink: 0;
+  }
+
+  /* Form fields */
+  .field { margin-bottom: 16px; }
+  .field label {
+    display: flex; justify-content: space-between; align-items: center;
+    font-size: 13px; font-weight: 700; color: var(--text-soft);
+    margin-bottom: 6px;
+    letter-spacing: 0.005em;
+  }
+  .row2 { display: grid; gap: 12px; grid-template-columns: 1fr 1fr; }
+  .row3 { display: grid; gap: 12px; grid-template-columns: 1fr 1fr 1fr; }
+  @media (max-width: 540px) { .row3 { grid-template-columns: 1fr 1fr; } }
+
+  .group {
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 14px;
+    margin-bottom: 16px;
+  }
+  .group h3 { margin: 0 0 12px; font-size: 15px; font-weight: 800; }
+  .group .group-sub { color: var(--muted); font-size: 13px; margin: -8px 0 12px; }
+
+  /* Chip / tag input */
+  .tag-input {
+    display: flex; flex-wrap: wrap; gap: 6px;
+    padding: 8px;
+    border: 1px solid var(--border-strong);
+    border-radius: 4px;
+    background: var(--bg);
+    min-height: 46px;
+  }
+  .tag-input input {
+    border: none; padding: 4px; flex: 1; min-width: 100px;
+    background: transparent;
+  }
+  .tag-input input:focus { outline: none; }
+  .tag {
+    display: inline-flex; align-items: center; gap: 4px;
+    padding: 3px 4px 3px 12px;
+    border-radius: 999px;
+    background: var(--bg-soft); border: 1px solid var(--border);
+    font-size: 13px; font-weight: 600;
+  }
+  .tag button {
+    width: 22px; height: 22px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    color: var(--muted); font-size: 16px; line-height: 1;
+  }
+  .tag button:hover { background: var(--border); color: var(--text); }
+
+  /* Toggle checkboxes (as chip row) */
+  .chip-check {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 6px 14px;
+    border-radius: 999px;
+    border: 1px solid var(--border-strong);
+    font-size: 14px; font-weight: 600;
+    cursor: pointer;
+    user-select: none;
+    transition: background .12s;
+  }
+  .chip-check:hover { background: var(--hover); }
+  .chip-check.on {
+    background: var(--accent); color: var(--accent-text);
+    border-color: var(--accent);
+  }
+  .chip-check input { display: none; }
+  .chip-row { display: flex; flex-wrap: wrap; gap: 6px; }
+
+  /* Segmented control */
+  .seg {
+    display: inline-flex; padding: 3px;
+    background: var(--bg-soft); border-radius: 8px;
+    border: 1px solid var(--border);
+  }
+  .seg button {
+    padding: 7px 14px;
+    border-radius: 6px;
+    font-size: 13px; font-weight: 700;
+    color: var(--text-soft);
+  }
+  .seg button.on { background: var(--bg); color: var(--text); box-shadow: 0 1px 2px rgba(0,0,0,0.06); }
+
+  /* Compare */
+  .compare-wrap { padding: 16px; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .compare {
+    display: grid; gap: 10px;
+    grid-auto-flow: column;
+    grid-auto-columns: minmax(220px, 1fr);
+  }
+  .compare-col {
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 14px;
+    min-width: 0;
+  }
+  .compare-col h4 { margin: 0 0 4px; font-size: 14px; font-weight: 800; line-height: 1.3; }
+  .compare-col dl { margin: 0; font-size: 13px; }
+  .compare-col dt { color: var(--muted); margin-top: 8px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; font-weight: 600; }
+  .compare-col dd { margin: 1px 0 0; font-weight: 600; }
+
+  /* Toast */
+  .toast {
+    position: fixed; left: 50%; bottom: calc(96px + env(safe-area-inset-bottom));
+    transform: translate(-50%, 8px);
+    background: var(--accent); color: var(--accent-text);
+    padding: 10px 18px; border-radius: 999px;
+    font-size: 14px; font-weight: 600;
+    z-index: 200; pointer-events: none;
+    opacity: 0;
+    transition: opacity .25s, transform .25s;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.18);
+  }
+  .toast.show { opacity: 1; transform: translate(-50%, 0); }
+
+  /* Empty states */
+  .empty {
+    padding: 60px 24px;
+    text-align: center;
+  }
+  .empty h2 { margin: 0 0 8px; font-size: 24px; font-weight: 800; letter-spacing: -0.01em; }
+  .empty p { margin: 0; color: var(--text-soft); font-size: 15px; line-height: 1.5; max-width: 360px; margin: 0 auto; }
+  .empty .actions { margin-top: 20px; display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; }
+
+  /* Quick brief */
+  .brief-wrap { padding: 20px 16px; }
+  .brief-wrap .addr { font-size: 26px; font-weight: 800; letter-spacing: -0.015em; line-height: 1.15; }
+  .brief-wrap .city-type { color: var(--text-soft); font-size: 16px; margin-top: 4px; }
+  .brief-wrap .price-big { font-size: 38px; font-weight: 800; letter-spacing: -0.02em; margin-top: 16px; }
+  .brief-wrap .specs-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 18px; }
+  .brief-wrap .stat {
+    border: 1px solid var(--border); border-radius: 12px; padding: 12px;
+  }
+  .brief-wrap .stat .lbl { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; font-weight: 700; }
+  .brief-wrap .stat .val { font-size: 20px; font-weight: 800; margin-top: 2px; letter-spacing: -0.005em; }
+  .brief-wrap .talking {
+    margin-top: 18px;
+    padding: 14px; border: 1px solid var(--border); border-radius: 12px;
+    background: var(--bg-soft); font-size: 15px; line-height: 1.5;
+  }
+  .brief-wrap .url-block { margin-top: 16px; }
+  .brief-wrap .url-block a { color: var(--text-soft); word-break: break-all; font-size: 13px; }
+
+  /* Utility */
+  .muted { color: var(--text-soft); }
+  .smaller { font-size: 13px; }
+  .stack > * + * { margin-top: 12px; }
+  .hidden { display: none !important; }
+  details { border: 1px solid var(--border); border-radius: 12px; padding: 12px 14px; margin-bottom: 12px; }
+  details summary { cursor: pointer; font-weight: 700; outline: none; }
+  details[open] summary { margin-bottom: 10px; }
+
+  /* Filter bar (listings) */
+  .filter-bar {
+    display: flex; gap: 8px; padding: 10px 16px;
+    border-bottom: 1px solid var(--border);
+    overflow-x: auto; -webkit-overflow-scrolling: touch;
+    background: var(--bg);
+  }
+  .filter-bar::-webkit-scrollbar { display: none; }
+  .filter-chip {
+    padding: 6px 14px; border-radius: 999px;
+    border: 1px solid var(--border-strong);
+    font-size: 13px; font-weight: 600; white-space: nowrap;
+    color: var(--text-soft);
+    transition: background .12s;
+  }
+  .filter-chip:hover { background: var(--hover); }
+  .filter-chip.on { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
+</style>
+</head>
+<body>
+
+<div class="app">
+  <header class="top">
+    <h1 id="page-title">Showings</h1>
+    <span class="sync-dot" id="sync-dot" title="Tap settings to enable cloud sync"></span>
+    <button class="icon-btn" onclick="openSettings()" aria-label="Settings">⚙</button>
+  </header>
+
+  <main id="main"></main>
+
+  <button class="fab" id="fab" onclick="onFabClick()" aria-label="Add">＋</button>
+
+  <nav class="tabs">
+    <button data-tab="clients" onclick="switchTab('clients')">
+      <span class="tab-icon">◴</span><span class="tab-label">CLIENTS</span>
+    </button>
+    <button data-tab="listings" onclick="switchTab('listings')">
+      <span class="tab-icon">⌂</span><span class="tab-label">LISTINGS</span>
+    </button>
+    <button data-tab="compare" onclick="switchTab('compare')">
+      <span class="tab-icon">⇄</span><span class="tab-label">COMPARE</span>
+    </button>
+  </nav>
+</div>
+
+<div class="modal-backdrop" id="modal-backdrop" onclick="onBackdropClick(event)">
+  <div class="modal" id="modal" onclick="event.stopPropagation()"></div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+/*=========================================================
+  Showings — Buyer Client Manager
+  Single-file PWA, X-style minimal UI
+  Storage: localStorage + optional GitHub Gist cloud sync
+=========================================================*/
+
+// ---- Data model & local storage --------------------
+const STORAGE_KEY = 'showings_data_v2';
+const SYNC_KEY = 'showings_sync_v1';
+const DEFAULT_DATA = {
+  clients: [],
+  listings: [],
+  settings: {
+    defaultDownPct: 20,
+    defaultMortgageRate: 5.0,
+    defaultAmortYears: 25,
+    defaultInsuranceMonthly: 100,
+  },
+  updatedAt: null,
+};
+const DEFAULT_SYNC = {
+  enabled: false,
+  gistId: '',
+  token: '',
+  lastPullAt: null,
+  lastPushAt: null,
+};
+
+let state = loadData();
+let sync = loadSyncConfig();
+let currentTab = 'clients';
+let compareSelection = [];
+let _filterClientId = '';
+let _filterStatus = '';
+let _onlyMatches = false;
+
+function loadData() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) {
+      // Migrate from v1 if present
+      const old = localStorage.getItem('showings_data_v1');
+      if (old) {
+        const d = JSON.parse(old);
+        d.updatedAt = new Date().toISOString();
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(d));
+        return d;
+      }
+      return structuredClone(DEFAULT_DATA);
+    }
+    const d = JSON.parse(raw);
+    if (!d.clients) d.clients = [];
+    if (!d.listings) d.listings = [];
+    if (!d.settings) d.settings = structuredClone(DEFAULT_DATA.settings);
+    return d;
+  } catch (e) {
+    console.error('load failed', e);
+    return structuredClone(DEFAULT_DATA);
+  }
+}
+function save() {
+  state.updatedAt = new Date().toISOString();
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  if (sync.enabled) schedulePush();
+}
+function loadSyncConfig() {
+  try {
+    const raw = localStorage.getItem(SYNC_KEY);
+    if (!raw) return structuredClone(DEFAULT_SYNC);
+    return { ...structuredClone(DEFAULT_SYNC), ...JSON.parse(raw) };
+  } catch (e) { return structuredClone(DEFAULT_SYNC); }
+}
+function saveSyncConfig() {
+  localStorage.setItem(SYNC_KEY, JSON.stringify(sync));
+}
+function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }
+
+// ---- Utility ---------------------------------------
+function $(sel, el=document) { return el.querySelector(sel); }
+function fmt$(n) {
+  if (n == null || isNaN(n)) return '—';
+  return '$' + Math.round(n).toLocaleString('en-CA');
+}
+function fmt$short(n) {
+  if (n == null || isNaN(n)) return '—';
+  const v = Math.round(n);
+  if (v >= 1_000_000) return '$' + (v/1_000_000).toFixed(v >= 10_000_000 ? 1 : 2) + 'M';
+  if (v >= 1_000) return '$' + Math.round(v/1000) + 'K';
+  return '$' + v.toLocaleString('en-CA');
+}
+function fmtMoneySigned(n) {
+  if (n == null || isNaN(n)) return '—';
+  const sign = n < 0 ? '−' : '+';
+  return sign + '$' + Math.abs(Math.round(n)).toLocaleString('en-CA');
+}
+function esc(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+function initials(name) {
+  return (name||'?').split(/\s+/).map(p=>p[0]).slice(0,2).join('').toUpperCase();
+}
+function numOrNull(v) { v = String(v||'').trim(); if (!v) return null; const n = +v; return isNaN(n) ? null : n; }
+
+// Per-sqft helpers — return null when either side is missing, so callers can hide the metric cleanly.
+function pricePsf(l)  { return (l && +l.price && +l.sizeSqft) ? (+l.price / +l.sizeSqft) : null; }
+function rentPsf(l)   { return (l && +l.estRentalIncome && +l.sizeSqft) ? (+l.estRentalIncome / +l.sizeSqft) : null; }
+function maintPsf(l)  { return (l && +l.maintenanceFee && +l.sizeSqft) ? (+l.maintenanceFee / +l.sizeSqft) : null; }
+function totalCostPsf(l) {
+  // All-in monthly carrying cost / sqft: mortgage + tax/12 + maint + insurance, ÷ sqft.
+  // Needs price + sqft. Other inputs (tax, maint) default to 0 if missing.
+  if (!l || !+l.price || !+l.sizeSqft) return null;
+  const cf = computeCashflow(l, { withRental: false });
+  return cf.expenses / +l.sizeSqft;
+}
+function fmt$psf(n)   { return n == null ? '—' : '$' + Math.round(n).toLocaleString('en-CA') + '/sf'; }
+function fmt$psfm(n)  { return n == null ? '—' : '$' + n.toFixed(2) + '/sf'; }
+function toggleChip(label, ev) {
+  if (ev) { ev.preventDefault(); ev.stopPropagation(); }
+  const i = label.querySelector('input[type="checkbox"]');
+  if (!i) return;
+  i.checked = !i.checked;
+  label.classList.toggle('on', i.checked);
+}
+function toast(msg) {
+  const t = $('#toast'); t.textContent = msg; t.classList.add('show');
+  clearTimeout(t._tid); t._tid = setTimeout(()=>t.classList.remove('show'), 1900);
+}
+
+// ---- Scoring ---------------------------------------
+function locationMatches(listingCity, locations) {
+  if (!locations || !locations.length) return true;
+  const lc = (listingCity||'').toLowerCase().trim();
+  if (!lc) return false;
+  return locations.some(loc => {
+    const l = loc.toLowerCase().trim();
+    return lc.includes(l) || l.includes(lc);
+  });
+}
+
+function computeMatchScore(listing, client) {
+  const c = client.criteria || {};
+  const w = c.weights || {};
+  const parts = [];
+
+  if (c.locations?.length) {
+    const s = locationMatches(listing.city, c.locations) ? 100 : 0;
+    parts.push({ key: 'location', score: s, weight: w.location ?? 2 });
+  }
+  if (c.propertyTypes?.length) {
+    const s = c.propertyTypes.includes(listing.propertyType) ? 100 : 0;
+    parts.push({ key: 'type', score: s, weight: w.type ?? 1 });
+  }
+  if (c.budgetMax) {
+    const p = +listing.price || 0;
+    let s = 100;
+    if (p > c.budgetMax) {
+      const over = (p - c.budgetMax) / c.budgetMax;
+      s = Math.max(0, 100 - over * 200);
+    }
+    parts.push({ key: 'price', score: s, weight: w.price ?? 2 });
+  }
+  if (c.bedsMin) {
+    const b = +listing.beds || 0;
+    const s = b >= c.bedsMin ? 100 : Math.max(0, (b / c.bedsMin) * 100);
+    parts.push({ key: 'beds', score: s, weight: w.beds ?? 1 });
+  }
+  if (c.bathsMin) {
+    const b = +listing.baths || 0;
+    const s = b >= c.bathsMin ? 100 : Math.max(0, (b / c.bathsMin) * 100);
+    parts.push({ key: 'baths', score: s, weight: w.baths ?? 0.5 });
+  }
+  if (c.sizeMin) {
+    const sz = +listing.sizeSqft || 0;
+    const s = sz >= c.sizeMin ? 100 : Math.max(0, (sz / c.sizeMin) * 100);
+    parts.push({ key: 'size', score: s, weight: w.size ?? 1 });
+  }
+  if (c.cashflowRequired) {
+    const cf = computeCashflow(listing, { withRental: c.cashflowWithRental });
+    const want = c.cashflowMin || 0;
+    let s;
+    if (cf.netMonthly >= want) s = 100;
+    else {
+      const diff = want - cf.netMonthly;
+      s = Math.max(0, 100 - (diff / 500) * 25);
+    }
+    parts.push({ key: 'cashflow', score: s, weight: w.cashflow ?? 2, cf });
+  }
+
+  if (!parts.length) return { score: 100, parts: [] };
+  const totalW = parts.reduce((a, p) => a + p.weight, 0);
+  const score = parts.reduce((a, p) => a + p.score * p.weight, 0) / totalW;
+  return { score: Math.round(score), parts };
+}
+
+function scoreClass(score, threshold) {
+  if (score == null) return '';
+  if (score >= threshold) return 'good';
+  if (score >= 50) return 'warn';
+  return 'bad';
+}
+
+// ---- Cashflow --------------------------------------
+function renderCashflowPreviewContent(l) {
+  const cfYes = computeCashflow(l, { withRental: true });
+  const cfNo = computeCashflow(l, { withRental: false });
+  const psf = pricePsf(l), rentSf = rentPsf(l), maintSf = maintPsf(l), totSf = totalCostPsf(l);
+  const sfBits = [];
+  if (psf) sfBits.push('Price ' + fmt$psf(psf));
+  if (rentSf) sfBits.push('Rent ' + fmt$psfm(rentSf));
+  if (maintSf) sfBits.push('Maint ' + fmt$psfm(maintSf));
+  if (totSf) sfBits.push('Total ' + fmt$psfm(totSf));
+  return `
+    <div class="muted smaller">${state.settings.defaultDownPct}% down · ${state.settings.defaultMortgageRate}% rate · ${state.settings.defaultAmortYears}yr</div>
+    <div style="margin-top:8px; display:flex; gap:16px; flex-wrap:wrap">
+      <div><div class="muted smaller">CF w/o rent</div><div style="font-size:22px; font-weight:800; color:${cfNo.netMonthly>=0?'var(--good)':'var(--bad)'}">${fmtMoneySigned(cfNo.netMonthly)}/mo</div></div>
+      <div><div class="muted smaller">CF w/ rent</div><div style="font-size:22px; font-weight:800; color:${cfYes.netMonthly>=0?'var(--good)':'var(--bad)'}">${fmtMoneySigned(cfYes.netMonthly)}/mo</div></div>
+    </div>
+    <div class="muted smaller" style="margin-top:8px">Mortgage ${fmt$(cfYes.monthlyMortgage)} + tax ${fmt$(cfYes.propTaxMonthly)} + maint ${fmt$(cfYes.maintMonthly)} + ins ${fmt$(cfYes.insMonthly)}</div>
+    ${sfBits.length ? `<div class="muted smaller" style="margin-top:6px">${sfBits.join(' · ')}</div>` : ''}
+  `;
+}
+function updateCashflowPreview() {
+  const el = $('#f-cf-preview');
+  if (!el) return;
+  const tmp = {
+    price: numOrNull($('#f-lprice')?.value),
+    sizeSqft: numOrNull($('#f-lsize')?.value),
+    maintenanceFee: numOrNull($('#f-lmaint')?.value) || 0,
+    propertyTax: numOrNull($('#f-ltax')?.value) || 0,
+    estRentalIncome: numOrNull($('#f-lrent')?.value) || 0,
+  };
+  el.innerHTML = renderCashflowPreviewContent(tmp);
+}
+
+function computeCashflow(listing, opts={}) {
+  const settings = state.settings;
+  const price = +listing.price || 0;
+  const downPct = listing.downPaymentPct != null ? +listing.downPaymentPct : settings.defaultDownPct;
+  const rate = listing.mortgageRate != null ? +listing.mortgageRate : settings.defaultMortgageRate;
+  const years = listing.amortYears != null ? +listing.amortYears : settings.defaultAmortYears;
+  const principal = price * (1 - downPct/100);
+  const r_eff = Math.pow(1 + (rate/100)/2, 1/6) - 1;
+  const n = years * 12;
+  let monthlyMortgage = 0;
+  if (principal > 0 && r_eff > 0 && n > 0) {
+    monthlyMortgage = principal * (r_eff * Math.pow(1+r_eff, n)) / (Math.pow(1+r_eff, n) - 1);
+  }
+  const propTaxMonthly = (+listing.propertyTax || 0) / 12;
+  const maintMonthly = +listing.maintenanceFee || 0;
+  const insMonthly = listing.insuranceMonthly != null ? +listing.insuranceMonthly : settings.defaultInsuranceMonthly;
+  const rental = opts.withRental ? (+listing.estRentalIncome || 0) : 0;
+  const expenses = monthlyMortgage + propTaxMonthly + maintMonthly + insMonthly;
+  const net = rental - expenses;
+  return { monthlyMortgage, propTaxMonthly, maintMonthly, insMonthly, rental, expenses, netMonthly: net, principal, downPct, rate, years };
+}
+
+// ---- GitHub Gist sync ------------------------------
+let _pushTimer = null;
+function schedulePush() {
+  if (!sync.enabled) return;
+  clearTimeout(_pushTimer);
+  _pushTimer = setTimeout(pushToGist, 1200);
+}
+function setSyncStatus(s) {
+  const dot = $('#sync-dot');
+  dot.classList.remove('live','syncing','error');
+  if (!sync.enabled) {
+    dot.title = 'Cloud sync off — tap settings';
+    return;
+  }
+  if (s === 'live') { dot.classList.add('live'); dot.title = 'Cloud sync on'; }
+  else if (s === 'syncing') { dot.classList.add('syncing'); dot.title = 'Syncing…'; }
+  else if (s === 'error') { dot.classList.add('error'); dot.title = 'Sync error — check settings'; }
+}
+async function pullFromGist(silent) {
+  if (!sync.enabled || !sync.gistId || !sync.token) return;
+  setSyncStatus('syncing');
+  try {
+    const res = await fetch('https://api.github.com/gists/' + sync.gistId, {
+      headers: { 'Authorization': 'token ' + sync.token, 'Accept': 'application/vnd.github+json' },
+    });
+    if (!res.ok) throw new Error('Pull failed: ' + res.status);
+    const gist = await res.json();
+    const file = gist.files['showings-data.json'];
+    if (!file) { setSyncStatus('live'); return; }
+    let content = file.content;
+    if (file.truncated && file.raw_url) {
+      const rawRes = await fetch(file.raw_url);
+      content = await rawRes.text();
+    }
+    const remote = JSON.parse(content);
+    // Merge: pick whichever updatedAt is more recent
+    const ru = remote.updatedAt ? new Date(remote.updatedAt).getTime() : 0;
+    const lu = state.updatedAt ? new Date(state.updatedAt).getTime() : 0;
+    if (ru > lu) {
+      state = remote;
+      if (!state.settings) state.settings = structuredClone(DEFAULT_DATA.settings);
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+      render();
+      if (!silent) toast('Pulled latest from cloud');
+    }
+    sync.lastPullAt = new Date().toISOString();
+    saveSyncConfig();
+    setSyncStatus('live');
+  } catch (e) {
+    console.error('pull error', e);
+    setSyncStatus('error');
+    if (!silent) toast('Pull failed: ' + e.message);
+  }
+}
+async function pushToGist() {
+  if (!sync.enabled || !sync.gistId || !sync.token) return;
+  setSyncStatus('syncing');
+  try {
+    const res = await fetch('https://api.github.com/gists/' + sync.gistId, {
+      method: 'PATCH',
+      headers: { 'Authorization': 'token ' + sync.token, 'Accept': 'application/vnd.github+json', 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        files: { 'showings-data.json': { content: JSON.stringify(state, null, 2) } }
+      }),
+    });
+    if (!res.ok) throw new Error('Push failed: ' + res.status);
+    sync.lastPushAt = new Date().toISOString();
+    saveSyncConfig();
+    setSyncStatus('live');
+  } catch (e) {
+    console.error('push error', e);
+    setSyncStatus('error');
+  }
+}
+async function createGist() {
+  if (!sync.token) throw new Error('Token required');
+  const res = await fetch('https://api.github.com/gists', {
+    method: 'POST',
+    headers: { 'Authorization': 'token ' + sync.token, 'Accept': 'application/vnd.github+json', 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      description: 'Showings — Buyer Client Manager data',
+      public: false,
+      files: { 'showings-data.json': { content: JSON.stringify(state, null, 2) } },
+    }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(()=>({}));
+    throw new Error(err.message || ('Create failed: ' + res.status));
+  }
+  const gist = await res.json();
+  return gist.id;
+}
+
+// ---- Routing / tabs --------------------------------
+function switchTab(t) {
+  currentTab = t;
+  document.querySelectorAll('nav.tabs button').forEach(b=>{
+    b.classList.toggle('active', b.dataset.tab === t);
+  });
+  render();
+}
+function onFabClick() {
+  if (currentTab === 'clients') editClient(null);
+  else if (currentTab === 'listings') editListing(null);
+  else if (currentTab === 'compare') toast('Tap listings to add to compare');
+}
+
+// ---- Render ----------------------------------------
+function render() {
+  const main = $('#main');
+  const title = $('#page-title');
+  const fab = $('#fab');
+  fab.style.display = currentTab === 'compare' ? 'none' : 'flex';
+
+  if (currentTab === 'clients') { title.textContent = 'Clients'; main.innerHTML = renderClients(); }
+  else if (currentTab === 'listings') { title.textContent = 'Listings'; main.innerHTML = renderListings(); }
+  else if (currentTab === 'compare') { title.textContent = 'Compare'; main.innerHTML = renderCompare(); }
+}
+
+function renderClients() {
+  if (state.clients.length === 0) {
+    return `<div class="empty">
+      <h2>No clients yet</h2>
+      <p>Tap <b>＋</b> to add your first buyer client and their buying criteria.</p>
+      <div class="actions"><button class="btn ghost" onclick="loadSampleData()">Try sample data</button></div>
+    </div>`;
+  }
+  return state.clients.map(c => {
+    const t = c.criteria?.matchThreshold || 70;
+    const matches = state.listings.filter(l => computeMatchScore(l, c).score >= t).length;
+    const assigned = state.listings.filter(l => (l.assignedClientIds||[]).includes(c.id)).length;
+    return `<div class="feed-item" onclick="openClient('${c.id}')">
+      <div class="avatar">${esc(initials(c.name))}</div>
+      <div class="body">
+        <h3>${esc(c.name)}</h3>
+        <div class="sub">${esc(criteriaSummary(c))}</div>
+        <div class="meta">
+          <span>${matches} match${matches===1?'':'es'}</span>
+          <span>${assigned} assigned</span>
+          ${c.phone?'<span>'+esc(c.phone)+'</span>':''}
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function criteriaSummary(c) {
+  const cr = c.criteria || {};
+  const bits = [];
+  if (cr.locations?.length) bits.push(cr.locations.slice(0,2).join(' / '));
+  if (cr.budgetMax) bits.push('≤ ' + fmt$short(cr.budgetMax));
+  if (cr.bedsMin) bits.push(cr.bedsMin + '+ bed');
+  if (cr.cashflowRequired) bits.push('cashflow' + (cr.cashflowWithRental?' (w/ rent)':''));
+  return bits.join(' · ') || 'No criteria set';
+}
+
+function renderListings() {
+  if (state.listings.length === 0) {
+    return `<div class="empty">
+      <h2>No listings yet</h2>
+      <p>Tap <b>＋</b> to add a listing from any site. Use <b>Smart Paste</b> to auto-extract price, beds, baths, sqft from copied listing text.</p>
+      ${state.clients.length === 0 ? '<div class="actions"><button class="btn ghost" onclick="loadSampleData()">Try sample data</button></div>' : ''}
+    </div>`;
+  }
+
+  const sorted = [...state.listings].sort((a,b) => (b.createdAt||'').localeCompare(a.createdAt||''));
+  let visible = sorted;
+  if (_filterStatus) visible = visible.filter(l => (l.status||'to_show') === _filterStatus);
+  let activeClient = null;
+  if (_filterClientId) {
+    activeClient = state.clients.find(c => c.id === _filterClientId);
+    if (activeClient) {
+      visible = visible.map(l => ({...l, _score: computeMatchScore(l, activeClient).score}));
+      if (_onlyMatches) {
+        const t = activeClient.criteria?.matchThreshold || 70;
+        visible = visible.filter(l => l._score >= t);
+      }
+      visible = visible.sort((a,b) => (b._score||0) - (a._score||0));
+    }
+  }
+
+  const filterBar = `<div class="filter-bar">
+    <button class="filter-chip ${!_filterClientId?'on':''}" onclick="_filterClientId=''; _onlyMatches=false; render()">Anyone</button>
+    ${state.clients.map(c => `<button class="filter-chip ${_filterClientId===c.id?'on':''}" onclick="_filterClientId='${c.id}'; render()">${esc(c.name.split(' ')[0])}</button>`).join('')}
+    <span style="width:1px; background:var(--border); margin:0 2px"></span>
+    <button class="filter-chip ${!_filterStatus?'on':''}" onclick="_filterStatus=''; render()">All</button>
+    <button class="filter-chip ${_filterStatus==='to_show'?'on':''}" onclick="_filterStatus='to_show'; render()">To Show</button>
+    <button class="filter-chip ${_filterStatus==='shown'?'on':''}" onclick="_filterStatus='shown'; render()">Shown</button>
+    <button class="filter-chip ${_filterStatus==='liked'?'on':''}" onclick="_filterStatus='liked'; render()">Liked</button>
+    ${activeClient ? `<span style="width:1px; background:var(--border); margin:0 2px"></span><button class="filter-chip ${_onlyMatches?'on':''}" onclick="_onlyMatches=!_onlyMatches; render()">Above threshold</button>` : ''}
+  </div>`;
+
+  const items = visible.length
+    ? visible.map(l => renderListingFeed(l, activeClient)).join('')
+    : `<div class="empty"><p>No listings match this filter.</p></div>`;
+
+  return filterBar + items;
+}
+
+function renderListingFeed(l, client) {
+  const status = l.status || 'to_show';
+  const statusLabels = { to_show:'To Show', shown:'Shown', liked:'Liked', rejected:'Rejected' };
+  const statusClass = { to_show:'pill', shown:'pill warn', liked:'pill good', rejected:'pill bad' };
+
+  let scoreHtml = '';
+  if (client) {
+    const score = l._score ?? computeMatchScore(l, client).score;
+    const t = client.criteria?.matchThreshold || 70;
+    scoreHtml = `<div class="score ${scoreClass(score, t)}">${score}%</div>`;
+  }
+
+  const specs = [];
+  if (l.beds != null) specs.push(`${l.beds} bd`);
+  if (l.baths != null) specs.push(`${l.baths} ba`);
+  if (l.sizeSqft) specs.push(`${(+l.sizeSqft).toLocaleString()} sf`);
+  if (l.parkingSpaces != null) specs.push(`${l.parkingSpaces} prkg`);
+  if (l.lockers != null) specs.push(l.lockers > 0 ? (l.lockers === 1 ? 'locker' : l.lockers + ' lkrs') : 'no lkr');
+  if (l.propertyType) specs.push(l.propertyType);
+
+  // Finance line: price/sf, rent/sf (if data), maint/sf (if data), total cost/sf, cashflow
+  const fin = [];
+  const psf = pricePsf(l), rentSf = rentPsf(l), maintSf = maintPsf(l), totSf = totalCostPsf(l);
+  if (psf) fin.push(`<span>${fmt$psf(psf)}</span>`);
+  if (rentSf) fin.push(`<span>Rent ${fmt$psfm(rentSf)}</span>`);
+  if (maintSf) fin.push(`<span>Maint ${fmt$psfm(maintSf)}</span>`);
+  if (totSf) fin.push(`<span>Total ${fmt$psfm(totSf)}</span>`);
+  if (l.price) {
+    const withRent = (+l.estRentalIncome) > 0;
+    const cf = computeCashflow(l, { withRental: withRent });
+    const cfColor = cf.netMonthly >= 0 ? 'var(--good)' : 'var(--bad)';
+    fin.push(`<span style="color:${cfColor}; font-weight:700">CF ${fmtMoneySigned(cf.netMonthly)}/mo${withRent ? '' : ' (no rent)'}</span>`);
+  }
+
+  const inCompare = compareSelection.includes(l.id);
+
+  return `<div class="listing-feed" onclick="briefListing('${l.id}')">
+    <div class="head">
+      <div class="addr">
+        <h3>${esc(l.address || 'Untitled')}</h3>
+        <div class="city">${esc(l.city || '')}${l.mlsNumber?' · MLS '+esc(l.mlsNumber):''}${l.builder?' · '+esc(l.builder):''}</div>
+      </div>
+      <div>
+        <div class="price">${fmt$short(l.price)}</div>
+        ${scoreHtml ? `<div style="margin-top:6px; text-align:right">${scoreHtml}</div>` : ''}
+      </div>
+    </div>
+    <div class="specs">${specs.map(s=>`<span>${esc(s)}</span>`).join('')}</div>
+    ${fin.length ? `<div class="specs">${fin.join('')}</div>` : ''}
+    ${l.quickBrief ? `<div class="brief">${esc(l.quickBrief)}</div>` : ''}
+    <div class="actions" onclick="event.stopPropagation()">
+      <span class="${statusClass[status]}">${statusLabels[status]}</span>
+      <div style="flex:1"></div>
+      <button class="btn ghost small" onclick="editListing('${l.id}')">Edit</button>
+      <button class="btn ghost small" onclick="toggleCompare('${l.id}')">${inCompare?'✓ Compare':'Compare'}</button>
+      ${l.realmasterUrl ? `<button class="btn small" onclick="shareListing('${l.id}', event)">Share</button>` : ''}
+    </div>
+  </div>`;
+}
+
+function renderCompare() {
+  if (compareSelection.length === 0) {
+    return `<div class="empty">
+      <h2>Compare listings</h2>
+      <p>Open a listing's quick brief and tap "Add to compare", or tap "Compare" on a listing card. Pick 2–4 to see them side by side.</p>
+    </div>`;
+  }
+  const listings = compareSelection.map(id => state.listings.find(l => l.id === id)).filter(Boolean);
+  const cmpClient = state.clients.find(c => c.id === window._cmpClient);
+  const t = cmpClient?.criteria?.matchThreshold || 70;
+  const withRental = !!cmpClient?.criteria?.cashflowWithRental;
+
+  const head = `<div style="padding: 14px 16px; border-bottom: 1px solid var(--border)">
+    <label class="muted smaller" style="display:block; margin-bottom:6px; font-weight:700;">Compare against</label>
+    <select onchange="window._cmpClient=this.value; render()">
+      <option value="">— Score-free comparison —</option>
+      ${state.clients.map(c => `<option value="${c.id}" ${window._cmpClient===c.id?'selected':''}>${esc(c.name)}</option>`).join('')}
+    </select>
+    <div style="margin-top:8px"><button class="btn link" onclick="compareSelection=[]; render()">Clear all</button></div>
+  </div>`;
+
+  const cols = listings.map(l => {
+    const cfYes = computeCashflow(l, { withRental: true });
+    const cfNo = computeCashflow(l, { withRental: false });
+    const cfShown = withRental ? cfYes : cfNo;
+    const score = cmpClient ? computeMatchScore(l, cmpClient).score : null;
+    return `<div class="compare-col">
+      <h4>${esc(l.address || 'Untitled')}</h4>
+      <div class="muted smaller" style="margin-bottom:6px">${esc(l.city||'')} · ${esc(l.propertyType||'')}</div>
+      ${score!=null ? `<div class="score ${scoreClass(score, t)}" style="margin-bottom:8px">${score}% fit</div>` : ''}
+      <dl>
+        ${l.mlsNumber?`<dt>MLS#</dt><dd>${esc(l.mlsNumber)}</dd>`:''}
+        ${l.builder?`<dt>Builder</dt><dd>${esc(l.builder)}</dd>`:''}
+        <dt>Price</dt><dd>${fmt$(l.price)}</dd>
+        <dt>Price / sf</dt><dd>${fmt$psf(pricePsf(l))}</dd>
+        <dt>Bed / Bath</dt><dd>${l.beds||'—'} / ${l.baths||'—'}</dd>
+        <dt>Size</dt><dd>${l.sizeSqft ? (+l.sizeSqft).toLocaleString()+' sf' : '—'}</dd>
+        <dt>Parking</dt><dd>${l.parkingSpaces!=null?l.parkingSpaces:'—'}</dd>
+        <dt>Locker</dt><dd>${l.lockers!=null?(l.lockers>0?(l.lockers===1?'Yes':l.lockers):'No'):'—'}</dd>
+        <dt>Maintenance / mo</dt><dd>${fmt$(l.maintenanceFee)}${maintPsf(l)?' &nbsp;<span class="muted smaller">'+fmt$psfm(maintPsf(l))+'</span>':''}</dd>
+        <dt>Tax / yr</dt><dd>${fmt$(l.propertyTax)}</dd>
+        <dt>Est. Rent / mo</dt><dd>${fmt$(l.estRentalIncome)}${rentPsf(l)?' &nbsp;<span class="muted smaller">'+fmt$psfm(rentPsf(l))+'</span>':''}</dd>
+        <dt>Mortgage / mo</dt><dd>${fmt$(cfYes.monthlyMortgage)}</dd>
+        <dt>Total cost / sf</dt><dd>${fmt$psfm(totalCostPsf(l))}</dd>
+        <dt>CF w/o rent</dt><dd style="color:${cfNo.netMonthly>=0?'var(--good)':'var(--bad)'}">${fmtMoneySigned(cfNo.netMonthly)}</dd>
+        <dt>CF w/ rent</dt><dd style="color:${cfYes.netMonthly>=0?'var(--good)':'var(--bad)'}">${fmtMoneySigned(cfYes.netMonthly)}</dd>
+      </dl>
+      <div style="margin-top:12px; display:flex; gap:6px; flex-wrap:wrap">
+        ${l.realmasterUrl ? `<button class="btn ghost small" onclick="shareListing('${l.id}', event)">Share</button>` : ''}
+        <button class="btn ghost small" onclick="toggleCompare('${l.id}')">Remove</button>
+      </div>
+    </div>`;
+  }).join('');
+
+  return head + `<div class="compare-wrap"><div class="compare">${cols}</div></div>`;
+}
+
+// ---- Client edit / view ----------------------------
+function openClient(id) {
+  const c = state.clients.find(x => x.id === id);
+  if (!c) return;
+  const matched = state.listings.map(l => ({l, m: computeMatchScore(l, c)})).sort((a,b)=>b.m.score-a.m.score);
+  const t = c.criteria?.matchThreshold || 70;
+  const above = matched.filter(x => x.m.score >= t);
+  const below = matched.filter(x => x.m.score < t);
+
+  showModal({
+    title: c.name,
+    body: `<div class="stack">
+      ${c.phone||c.email||c.notes ? `<div class="group">
+        ${c.phone?`<div>${esc(c.phone)}</div>`:''}
+        ${c.email?`<div class="muted">${esc(c.email)}</div>`:''}
+        ${c.notes?`<div style="margin-top:8px">${esc(c.notes)}</div>`:''}
+      </div>`:''}
+      <div class="group">
+        <h3>Buying criteria</h3>
+        <div style="line-height:1.7;">${criteriaDetail(c)}</div>
+      </div>
+      <div>
+        <h3 style="margin:0 0 8px; font-size:15px">Matches (≥ ${t}%) — ${above.length}</h3>
+        ${above.map(x => listingMiniRow(x.l, x.m.score, c.id, t)).join('') || '<div class="muted">No listings above threshold yet.</div>'}
+        ${below.length ? `<details style="margin-top:14px">
+          <summary>Below threshold (${below.length})</summary>
+          <div style="margin-top:8px">${below.map(x => listingMiniRow(x.l, x.m.score, c.id, t)).join('')}</div>
+        </details>` : ''}
+      </div>
+    </div>`,
+    footer: `
+      <button class="btn ghost" onclick="deleteClient('${c.id}')">Delete</button>
+      <div style="flex:1"></div>
+      <button class="btn ghost" onclick="closeModal()">Close</button>
+      <button class="btn" onclick="editClient('${c.id}')">Edit</button>
+    `
+  });
+}
+
+function listingMiniRow(l, score, clientId, threshold) {
+  const cli = state.clients.find(c => c.id === clientId);
+  const cf = computeCashflow(l, { withRental: cli?.criteria?.cashflowWithRental });
+  const showing = (l.showings||[]).find(s => s.clientId === clientId);
+  return `<div class="feed-item" style="margin:0 -14px; padding:10px 14px; border-bottom:1px solid var(--border)" onclick="closeModal(); setTimeout(()=>editListing('${l.id}'), 60)">
+    <div class="body">
+      <h3 style="font-size:14px">${esc(l.address || 'Untitled')}</h3>
+      <div class="muted smaller">${fmt$short(l.price)} · ${l.beds||'—'}b/${l.baths||'—'}ba · CF ${fmtMoneySigned(cf.netMonthly)}/mo</div>
+      ${showing?.notes ? `<div class="muted smaller" style="margin-top:3px">📝 ${esc(showing.notes.slice(0,80))}${showing.notes.length>80?'…':''}</div>` : ''}
+    </div>
+    <div class="score ${scoreClass(score, threshold)}">${score}%</div>
+  </div>`;
+}
+
+function criteriaDetail(c) {
+  const cr = c.criteria || {};
+  const lines = [];
+  if (cr.locations?.length) lines.push(`<b>Location</b> — ${cr.locations.map(esc).join(', ')}`);
+  if (cr.propertyTypes?.length) lines.push(`<b>Type</b> — ${cr.propertyTypes.map(esc).join(', ')}`);
+  if (cr.budgetMin || cr.budgetMax) lines.push(`<b>Budget</b> — ${cr.budgetMin?fmt$short(cr.budgetMin):'—'} to ${cr.budgetMax?fmt$short(cr.budgetMax):'—'}`);
+  if (cr.bedsMin) lines.push(`<b>Bedrooms</b> — ${cr.bedsMin}+`);
+  if (cr.bathsMin) lines.push(`<b>Bathrooms</b> — ${cr.bathsMin}+`);
+  if (cr.sizeMin) lines.push(`<b>Size</b> — ${cr.sizeMin}+ sqft`);
+  if (cr.cashflowRequired) lines.push(`<b>Cashflow</b> — ≥ ${fmt$(cr.cashflowMin||0)}/mo ${cr.cashflowWithRental?'(with rental income)':'(without rental)'}`);
+  if (cr.specialRequirements) lines.push(`<b>Special</b> — ${esc(cr.specialRequirements)}`);
+  lines.push(`<b>Match threshold</b> — ${cr.matchThreshold||70}%`);
+  return lines.join('<br>');
+}
+
+function editClient(id) {
+  const isNew = !id;
+  const c = id ? structuredClone(state.clients.find(x=>x.id===id)) : {
+    id: uid(), name:'', phone:'', email:'', notes:'',
+    createdAt: new Date().toISOString(),
+    criteria: { locations:[], propertyTypes:[], budgetMin:null, budgetMax:null,
+      bedsMin:null, bathsMin:null, sizeMin:null,
+      cashflowRequired:false, cashflowMin:0, cashflowWithRental:true,
+      matchThreshold:70, specialRequirements:'',
+      weights: { location:2, type:1, price:2, beds:1, baths:0.5, size:1, cashflow:2 } }
+  };
+  const types = ['Detached','Semi-Detached','Townhouse','Condo','Condo Townhouse','Multi-Plex'];
+
+  showModal({
+    title: isNew ? 'New Client' : 'Edit Client',
+    body: `<div class="stack">
+      <div class="field"><label>Name</label><input id="f-name" value="${esc(c.name)}" placeholder="Client name" autofocus></div>
+      <div class="row2">
+        <div class="field"><label>Phone</label><input id="f-phone" value="${esc(c.phone)}"></div>
+        <div class="field"><label>Email</label><input id="f-email" type="email" value="${esc(c.email)}"></div>
+      </div>
+      <div class="field"><label>Notes</label><textarea id="f-notes">${esc(c.notes)}</textarea></div>
+
+      <div class="group">
+        <h3>Buying criteria</h3>
+        <div class="field">
+          <label>Locations</label>
+          <div class="tag-input" id="f-locations">
+            ${(c.criteria.locations||[]).map(loc=>renderTagHtml(loc)).join('')}
+            <input placeholder="Add a city / area, press Enter" onkeydown="handleTagKey(event)">
+          </div>
+        </div>
+        <div class="field">
+          <label>Property types</label>
+          <div class="chip-row">
+            ${types.map(t => `<label class="chip-check ${(c.criteria.propertyTypes||[]).includes(t)?'on':''}" onclick="toggleChip(this, event)"><input type="checkbox" data-ptype="${esc(t)}" ${(c.criteria.propertyTypes||[]).includes(t)?'checked':''}>${esc(t)}</label>`).join('')}
+          </div>
+        </div>
+        <div class="row2">
+          <div class="field"><label>Budget min</label><input id="f-bmin" type="number" inputmode="numeric" value="${c.criteria.budgetMin??''}" placeholder="$"></div>
+          <div class="field"><label>Budget max</label><input id="f-bmax" type="number" inputmode="numeric" value="${c.criteria.budgetMax??''}" placeholder="$"></div>
+        </div>
+        <div class="row3">
+          <div class="field"><label>Beds min</label><input id="f-beds" type="number" step="0.5" inputmode="decimal" value="${c.criteria.bedsMin??''}"></div>
+          <div class="field"><label>Baths min</label><input id="f-baths" type="number" step="0.5" inputmode="decimal" value="${c.criteria.bathsMin??''}"></div>
+          <div class="field"><label>Sqft min</label><input id="f-size" type="number" inputmode="numeric" value="${c.criteria.sizeMin??''}"></div>
+        </div>
+      </div>
+
+      <div class="group">
+        <h3>Cashflow</h3>
+        <label class="chip-check ${c.criteria.cashflowRequired?'on':''}" onclick="toggleChip(this, event)"><input id="f-cfreq" type="checkbox" ${c.criteria.cashflowRequired?'checked':''}>Cashflow is a requirement</label>
+        <div class="row2" style="margin-top:12px">
+          <div class="field"><label>Min cashflow / mo</label><input id="f-cfmin" type="number" inputmode="numeric" value="${c.criteria.cashflowMin??0}" placeholder="$0"></div>
+          <div class="field"><label>Counts rental income</label>
+            <div class="seg" id="f-cfrent">
+              <button type="button" class="${c.criteria.cashflowWithRental?'on':''}" data-rent="1" onclick="this.parentNode.querySelectorAll('button').forEach(b=>b.classList.remove('on')); this.classList.add('on')">Yes</button>
+              <button type="button" class="${!c.criteria.cashflowWithRental?'on':''}" data-rent="0" onclick="this.parentNode.querySelectorAll('button').forEach(b=>b.classList.remove('on')); this.classList.add('on')">No</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="field"><label>Special requirements</label><textarea id="f-special" placeholder="e.g. south-facing, near subway, finished basement">${esc(c.criteria.specialRequirements||'')}</textarea></div>
+      <div class="field"><label>Match threshold (% — minimum score to flag as a fit)</label><input id="f-thresh" type="number" inputmode="numeric" min="0" max="100" value="${c.criteria.matchThreshold||70}"></div>
+    </div>`,
+    footer: `
+      <button class="btn ghost" onclick="closeModal()">Cancel</button>
+      <div style="flex:1"></div>
+      <button class="btn" onclick="saveClientForm('${c.id}', ${isNew})">Save</button>
+    `
+  });
+}
+
+function saveClientForm(id, isNew) {
+  const name = $('#f-name').value.trim();
+  if (!name) { toast('Name is required'); return; }
+  const locations = Array.from(document.querySelectorAll('#f-locations .tag')).map(t => t.firstChild.textContent.trim()).filter(Boolean);
+  const propertyTypes = Array.from(document.querySelectorAll('[data-ptype]')).filter(cb=>cb.checked).map(cb=>cb.dataset.ptype);
+  const withRental = document.querySelector('#f-cfrent button.on')?.dataset.rent === '1';
+  const existing = state.clients.find(x => x.id === id);
+  const c = {
+    id, name,
+    phone: $('#f-phone').value.trim(),
+    email: $('#f-email').value.trim(),
+    notes: $('#f-notes').value.trim(),
+    createdAt: isNew ? new Date().toISOString() : (existing?.createdAt || new Date().toISOString()),
+    criteria: {
+      locations, propertyTypes,
+      budgetMin: numOrNull($('#f-bmin').value),
+      budgetMax: numOrNull($('#f-bmax').value),
+      bedsMin: numOrNull($('#f-beds').value),
+      bathsMin: numOrNull($('#f-baths').value),
+      sizeMin: numOrNull($('#f-size').value),
+      cashflowRequired: $('#f-cfreq').checked,
+      cashflowMin: numOrNull($('#f-cfmin').value) || 0,
+      cashflowWithRental: withRental,
+      specialRequirements: $('#f-special').value.trim(),
+      matchThreshold: numOrNull($('#f-thresh').value) || 70,
+      weights: { location:2, type:1, price:2, beds:1, baths:0.5, size:1, cashflow:2 },
+    }
+  };
+  if (isNew) state.clients.push(c);
+  else state.clients[state.clients.findIndex(x => x.id === id)] = c;
+  save(); closeModal(); render();
+  toast(isNew ? 'Client added' : 'Saved');
+}
+
+function deleteClient(id) {
+  if (!confirm('Delete this client?')) return;
+  state.clients = state.clients.filter(c => c.id !== id);
+  state.listings.forEach(l => {
+    if (l.assignedClientIds) l.assignedClientIds = l.assignedClientIds.filter(x => x !== id);
+    if (l.showings) l.showings = l.showings.filter(s => s.clientId !== id);
+  });
+  save(); closeModal(); render(); toast('Deleted');
+}
+
+// Tag-input helpers
+function renderTagHtml(text) {
+  return `<span class="tag">${esc(text)}<button type="button" onclick="this.parentNode.remove()">×</button></span>`;
+}
+function handleTagKey(ev) {
+  if (ev.key !== 'Enter' && ev.key !== ',') return;
+  ev.preventDefault();
+  const v = ev.target.value.trim().replace(/,$/, '').trim();
+  if (!v) return;
+  const span = document.createElement('span');
+  span.className = 'tag';
+  span.textContent = v;
+  const btn = document.createElement('button');
+  btn.type = 'button'; btn.textContent = '×';
+  btn.onclick = () => span.remove();
+  span.appendChild(btn);
+  ev.target.parentNode.insertBefore(span, ev.target);
+  ev.target.value = '';
+}
+
+// ---- Listing edit -----------------------------------
+function editListing(id) {
+  const isNew = !id;
+  const l = id ? structuredClone(state.listings.find(x=>x.id===id)) : {
+    id: uid(), realmasterUrl:'',
+    address:'', city:'', propertyType:'Condo',
+    price:null, beds:null, baths:null, sizeSqft:null,
+    maintenanceFee:0, propertyTax:0, estRentalIncome:0,
+    quickBrief:'', status:'to_show',
+    mlsNumber:'', builder:'',
+    parkingSpaces:null, lockers:null,
+    assignedClientIds:[], showings:[],
+    createdAt: new Date().toISOString(),
+  };
+  const types = ['Detached','Semi-Detached','Townhouse','Condo','Condo Townhouse','Multi-Plex'];
+  const matches = state.clients.map(c => ({ c, m: computeMatchScore(l, c) })).sort((a,b)=>b.m.score-a.m.score);
+
+  const clientChecks = state.clients.map(c =>
+    `<label class="chip-check ${(l.assignedClientIds||[]).includes(c.id)?'on':''}" onclick="toggleChip(this, event)"><input type="checkbox" data-cid="${c.id}" ${(l.assignedClientIds||[]).includes(c.id)?'checked':''}>${esc(c.name)}</label>`
+  ).join('') || '<div class="muted smaller">No clients yet. Add one first to assign.</div>';
+
+  showModal({
+    title: isNew ? 'New Listing' : 'Edit Listing',
+    body: `<div class="stack">
+      <div class="field">
+        <label>Listing URL <button type="button" class="btn link" onclick="openSmartPaste('${l.id}')">✦ Smart paste</button></label>
+        <input id="f-url" type="url" value="${esc(l.realmasterUrl||'')}" placeholder="Paste from realtor.ca, RealMaster, HouseSigma…">
+        <div class="muted smaller" style="margin-top:4px">Tapping the link on phone opens whichever app owns the listing.</div>
+      </div>
+      <div class="field"><label>Address</label><input id="f-laddr" value="${esc(l.address||'')}" placeholder="123 Main St, #405"></div>
+      <div class="row2">
+        <div class="field"><label>City</label><input id="f-lcity" value="${esc(l.city||'')}" placeholder="Toronto"></div>
+        <div class="field"><label>Property type</label>
+          <select id="f-ltype">${types.map(t => `<option ${l.propertyType===t?'selected':''}>${esc(t)}</option>`).join('')}</select>
+        </div>
+      </div>
+      <div class="row2">
+        <div class="field"><label>Price</label><input id="f-lprice" type="number" inputmode="numeric" value="${l.price??''}" placeholder="$" oninput="updateCashflowPreview()"></div>
+        <div class="field"><label>Size (sqft)</label><input id="f-lsize" type="number" inputmode="numeric" value="${l.sizeSqft??''}" oninput="updateCashflowPreview()"></div>
+      </div>
+      <div class="row2">
+        <div class="field"><label>Beds</label><input id="f-lbeds" type="number" step="0.5" inputmode="decimal" value="${l.beds??''}"></div>
+        <div class="field"><label>Baths</label><input id="f-lbaths" type="number" step="0.5" inputmode="decimal" value="${l.baths??''}"></div>
+      </div>
+      <div class="row2">
+        <div class="field"><label>Maint / mo</label><input id="f-lmaint" type="number" inputmode="numeric" value="${l.maintenanceFee??0}" placeholder="$" oninput="updateCashflowPreview()"></div>
+        <div class="field"><label>Tax / yr</label><input id="f-ltax" type="number" inputmode="numeric" value="${l.propertyTax??0}" placeholder="$" oninput="updateCashflowPreview()"></div>
+      </div>
+      <div class="field"><label>Est. rent / mo</label><input id="f-lrent" type="number" inputmode="numeric" value="${l.estRentalIncome??0}" placeholder="$" oninput="updateCashflowPreview()"></div>
+
+      <div class="row2">
+        <div class="field"><label>MLS#</label><input id="f-lmls" value="${esc(l.mlsNumber||'')}" placeholder="C1234567"></div>
+        <div class="field"><label>Builder / developer</label><input id="f-lbuilder" value="${esc(l.builder||'')}" placeholder="e.g. Tridel"></div>
+      </div>
+      <div class="row2">
+        <div class="field"><label>Parking spaces</label><input id="f-lparking" type="number" inputmode="numeric" min="0" max="20" value="${l.parkingSpaces ?? ''}" placeholder="0"></div>
+        <div class="field"><label>Lockers</label><input id="f-llocker" type="number" inputmode="numeric" min="0" max="10" value="${l.lockers ?? ''}" placeholder="0 = none, 1+ = count"></div>
+      </div>
+
+      <div class="field"><label>Quick brief</label><textarea id="f-lbrief" placeholder="A few lines for at-a-glance during showings…">${esc(l.quickBrief||'')}</textarea></div>
+
+      <div class="field"><label>Status</label>
+        <div class="seg" id="f-lstatus-seg">
+          ${['to_show','shown','liked','rejected'].map(s=>`<button type="button" class="${(l.status||'to_show')===s?'on':''}" data-status="${s}" onclick="this.parentNode.querySelectorAll('button').forEach(b=>b.classList.remove('on')); this.classList.add('on')">${({to_show:'To Show',shown:'Shown',liked:'Liked',rejected:'Rejected'}[s])}</button>`).join('')}
+        </div>
+      </div>
+
+      <details ${isNew?'':'open'}>
+        <summary>Cashflow preview</summary>
+        <div id="f-cf-preview" style="margin-top:8px">${renderCashflowPreviewContent(l)}</div>
+      </details>
+
+      ${matches.length ? `<details ${isNew?'':'open'}>
+        <summary>Match scores</summary>
+        <div style="margin-top:8px">
+          ${matches.map(({c,m})=>{const t=c.criteria?.matchThreshold||70; return `<div style="display:flex; gap:8px; padding:8px 0; border-bottom:1px solid var(--border)"><div style="flex:1">${esc(c.name)}</div><div class="score ${scoreClass(m.score, t)}">${m.score}%</div></div>`}).join('')}
+        </div>
+      </details>` : ''}
+
+      ${state.clients.length ? `<div class="field">
+        <label>Assigned clients</label>
+        <div class="chip-row">${clientChecks}</div>
+      </div>` : ''}
+
+      ${(l.assignedClientIds||[]).length && !isNew ? `<div class="group">
+        <h3>Post-showing notes</h3>
+        ${(l.assignedClientIds||[]).map(cid => {
+          const cli = state.clients.find(c=>c.id===cid);
+          if (!cli) return '';
+          const sh = (l.showings||[]).find(s=>s.clientId===cid) || {};
+          return `<details ${sh.notes||sh.reaction?'open':''} style="background:var(--bg-soft)">
+            <summary>${esc(cli.name)}${sh.reaction?' — '+esc(sh.reaction):''}</summary>
+            <div style="margin-top:8px">
+              <div class="row2">
+                <div class="field"><label>Date</label><input data-show-date="${cid}" type="date" value="${sh.showingDate||''}"></div>
+                <div class="field"><label>Reaction</label>
+                  <select data-show-reaction="${cid}">
+                    <option value="">—</option>
+                    ${['loved','liked','meh','disliked'].map(r=>`<option value="${r}" ${sh.reaction===r?'selected':''}>${r}</option>`).join('')}
+                  </select>
+                </div>
+              </div>
+              <div class="field"><label>Notes</label><textarea data-show-notes="${cid}" placeholder="Post-showing thoughts, comments, concerns">${esc(sh.notes||'')}</textarea></div>
+            </div>
+          </details>`;
+        }).join('')}
+      </div>` : ''}
+    </div>`,
+    footer: `
+      ${!isNew?`<button class="btn ghost" onclick="deleteListing('${l.id}')">Delete</button>`:''}
+      <div style="flex:1"></div>
+      <button class="btn ghost" onclick="closeModal()">Cancel</button>
+      <button class="btn" onclick="saveListingForm('${l.id}', ${isNew})">Save</button>
+    `
+  });
+}
+
+function saveListingForm(id, isNew) {
+  const address = $('#f-laddr').value.trim();
+  if (!address) { toast('Address required'); return; }
+  const assignedClientIds = Array.from(document.querySelectorAll('[data-cid]')).filter(cb=>cb.checked).map(cb=>cb.dataset.cid);
+  const showings = [];
+  assignedClientIds.forEach(cid => {
+    const dateEl = document.querySelector(`[data-show-date="${cid}"]`);
+    const reacEl = document.querySelector(`[data-show-reaction="${cid}"]`);
+    const noteEl = document.querySelector(`[data-show-notes="${cid}"]`);
+    if (dateEl || reacEl || noteEl) {
+      const sh = { clientId: cid, showingDate: dateEl?.value || '', reaction: reacEl?.value || '', notes: noteEl?.value.trim() || '' };
+      if (sh.showingDate || sh.reaction || sh.notes) showings.push(sh);
+    }
+  });
+  const existing = state.listings.find(x => x.id === id);
+  const status = document.querySelector('#f-lstatus-seg button.on')?.dataset.status || 'to_show';
+  const l = {
+    id, realmasterUrl: $('#f-url').value.trim(),
+    address, city: $('#f-lcity').value.trim(),
+    propertyType: $('#f-ltype').value,
+    price: numOrNull($('#f-lprice').value),
+    beds: numOrNull($('#f-lbeds').value),
+    baths: numOrNull($('#f-lbaths').value),
+    sizeSqft: numOrNull($('#f-lsize').value),
+    maintenanceFee: numOrNull($('#f-lmaint').value) || 0,
+    propertyTax: numOrNull($('#f-ltax').value) || 0,
+    estRentalIncome: numOrNull($('#f-lrent').value) || 0,
+    quickBrief: $('#f-lbrief').value.trim(),
+    mlsNumber: $('#f-lmls').value.trim(),
+    builder: $('#f-lbuilder').value.trim(),
+    parkingSpaces: numOrNull($('#f-lparking').value),
+    lockers: numOrNull($('#f-llocker').value),
+    status, assignedClientIds, showings,
+    createdAt: isNew ? new Date().toISOString() : (existing?.createdAt || new Date().toISOString()),
+  };
+  if (isNew) state.listings.push(l);
+  else state.listings[state.listings.findIndex(x => x.id === id)] = l;
+  save(); closeModal(); render();
+  toast(isNew ? 'Listing added' : 'Saved');
+}
+
+function deleteListing(id) {
+  if (!confirm('Delete this listing?')) return;
+  state.listings = state.listings.filter(l => l.id !== id);
+  compareSelection = compareSelection.filter(x => x !== id);
+  save(); closeModal(); render(); toast('Deleted');
+}
+
+function toggleCompare(id) {
+  const i = compareSelection.indexOf(id);
+  if (i >= 0) compareSelection.splice(i, 1);
+  else if (compareSelection.length >= 4) { toast('Max 4'); return; }
+  else compareSelection.push(id);
+  render();
+}
+
+// ---- Smart paste ----------------------------------
+function openSmartPaste(listingId) {
+  const cur = {
+    url: $('#f-url')?.value || '',
+    addr: $('#f-laddr')?.value || '',
+    city: $('#f-lcity')?.value || '',
+    type: $('#f-ltype')?.value || '',
+    price: $('#f-lprice')?.value || '',
+    beds: $('#f-lbeds')?.value || '',
+    baths: $('#f-lbaths')?.value || '',
+    size: $('#f-lsize')?.value || '',
+    maint: $('#f-lmaint')?.value || '',
+    tax: $('#f-ltax')?.value || '',
+    rent: $('#f-lrent')?.value || '',
+    brief: $('#f-lbrief')?.value || '',
+    mls: $('#f-lmls')?.value || '',
+    builder: $('#f-lbuilder')?.value || '',
+    parking: $('#f-lparking')?.value || '',
+    locker: $('#f-llocker')?.value || '',
+    status: document.querySelector('#f-lstatus-seg button.on')?.dataset.status || 'to_show',
+  };
+  const assigned = Array.from(document.querySelectorAll('[data-cid]')).filter(cb=>cb.checked).map(cb=>cb.dataset.cid);
+  window._editStash = { listingId, cur, assigned };
+
+  closeModal();
+  setTimeout(() => {
+    showModal({
+      title: 'Smart Paste',
+      body: `<div class="stack">
+        <div class="muted smaller">Open any listing in your browser / app → Select All → Copy → paste below. We'll pull out price, beds, baths, sqft, address, type. Edit anything wrong on the next screen.</div>
+        <div class="field">
+          <label>Listing URL (optional)</label>
+          <input id="sp-url" type="url" value="${esc(cur.url)}" placeholder="https://…">
+        </div>
+        <div class="field">
+          <label>Paste listing page text</label>
+          <textarea id="sp-text" rows="9" placeholder="Paste anything — listing page, email alert, description…"></textarea>
+        </div>
+        <div id="sp-preview" class="muted smaller"></div>
+      </div>`,
+      footer: `
+        <button class="btn ghost" onclick="closeModal(); reopenListingEdit()">Cancel</button>
+        <div style="flex:1"></div>
+        <button class="btn" onclick="applySmartPaste()">Parse & Fill</button>
+      `
+    });
+    $('#sp-text').addEventListener('input', updateSmartPastePreview);
+    $('#sp-url').addEventListener('input', updateSmartPastePreview);
+    setTimeout(()=>$('#sp-text')?.focus(), 80);
+  }, 60);
+}
+
+function reopenListingEdit() {
+  const stash = window._editStash;
+  if (!stash) return;
+  if (stash.listingId && state.listings.find(l => l.id === stash.listingId)) editListing(stash.listingId);
+  else editListing(null);
+  setTimeout(() => {
+    const set = (id, v) => { if (v && $(id)) $(id).value = v; };
+    set('#f-url', stash.cur.url);
+    set('#f-laddr', stash.cur.addr);
+    set('#f-lcity', stash.cur.city);
+    set('#f-ltype', stash.cur.type);
+    set('#f-lprice', stash.cur.price);
+    set('#f-lbeds', stash.cur.beds);
+    set('#f-lbaths', stash.cur.baths);
+    set('#f-lsize', stash.cur.size);
+    set('#f-lmaint', stash.cur.maint);
+    set('#f-ltax', stash.cur.tax);
+    set('#f-lrent', stash.cur.rent);
+    set('#f-lbrief', stash.cur.brief);
+    set('#f-lmls', stash.cur.mls);
+    set('#f-lbuilder', stash.cur.builder);
+    set('#f-lparking', stash.cur.parking);
+    set('#f-llocker', stash.cur.locker);
+    if (stash.cur.status) {
+      document.querySelectorAll('#f-lstatus-seg button').forEach(b=>b.classList.toggle('on', b.dataset.status===stash.cur.status));
+    }
+    stash.assigned.forEach(cid => {
+      const cb = document.querySelector(`[data-cid="${cid}"]`);
+      if (cb && !cb.checked) {
+        cb.checked = true;
+        cb.closest('.chip-check')?.classList.add('on');
+      }
+    });
+  }, 90);
+}
+
+function parseListingText(text, url) {
+  text = (text || '').trim();
+  const flat = text.replace(/[ \t]+/g, ' ');
+  const oneLine = flat.replace(/\s+/g, ' ');
+  const out = {};
+
+  const priceMatches = [...oneLine.matchAll(/\$\s?([\d]{1,3}(?:,\d{3})+|\d{6,8})(?:\.\d+)?(?:\s?(?:M|K))?/gi)];
+  let best = 0;
+  priceMatches.forEach(m => {
+    let n = parseFloat(m[1].replace(/,/g, ''));
+    const tail = (m[0].match(/M|K/i)||[''])[0].toUpperCase();
+    if (tail === 'M') n *= 1_000_000;
+    else if (tail === 'K') n *= 1_000;
+    if (n >= 100_000 && n <= 50_000_000 && n > best) best = n;
+  });
+  if (best) out.price = best;
+
+  const bedM = oneLine.match(/(\d+(?:\s?\+\s?\d+)?)\s*(?:beds?|bdrm|bdrms|bedroom|bedrooms|br\b|bd\b)/i);
+  if (bedM) {
+    const v = bedM[1].replace(/\s/g, '');
+    out.beds = v.includes('+') ? v.split('+').reduce((a,b)=>+a + +b, 0) : +v;
+  }
+  const bathM = oneLine.match(/(\d+(?:\.\d+)?)\s*(?:baths?|bathroom|bathrooms|ba\b)/i);
+  if (bathM) out.baths = +bathM[1];
+
+  const sizeM = oneLine.match(/(\d{1,3}(?:,\d{3})+|\d{3,5})\s*(?:-\s*(?:\d{1,3}(?:,\d{3})+|\d{3,5}))?\s*(?:sq\.?\s?ft|sqft|sf\b|square\s?feet?)/i);
+  if (sizeM) out.sizeSqft = parseInt(sizeM[1].replace(/,/g, ''));
+
+  const mainM = oneLine.match(/(?:maintenance|maint\.?\s?fees?|condo\s?fee|strata\s?fee|strata)[^\d$]{0,20}\$?\s?(\d[\d,]*)/i);
+  if (mainM) out.maintenanceFee = parseInt(mainM[1].replace(/,/g, ''));
+
+  const taxM = oneLine.match(/(?:property\s?tax(?:es)?|annual\s?tax(?:es)?|tax(?:es)?)[^\d$]{0,20}\$?\s?(\d[\d,]*)/i);
+  if (taxM) {
+    let t = parseInt(taxM[1].replace(/,/g, ''));
+    if (t > 100 && t < 600) t *= 12;
+    out.propertyTax = t;
+  }
+
+  const typeKeywords = [
+    ['Condo Townhouse', /condo\s?town(?:house)?|condo\s?th/i],
+    ['Condo', /\bcondo(?:minium)?\b|\bapartment\b/i],
+    ['Townhouse', /\btown(?:house)?\b|\bth\b/i],
+    ['Semi-Detached', /semi[-\s]?detached/i],
+    ['Detached', /\bdetached\b|\bsingle\s?family\b/i],
+    ['Multi-Plex', /\b(?:duplex|triplex|fourplex|multi[-\s]?plex)\b/i],
+  ];
+  for (const [name, re] of typeKeywords) {
+    if (re.test(oneLine)) { out.propertyType = name; break; }
+  }
+
+  const addrM = oneLine.match(/(\d+\s*-?\s*\d*\s+[A-Z][a-zA-Z]*(?:\s+[A-Z][a-zA-Z]*){0,4}\s+(?:Street|St|Road|Rd|Avenue|Ave|Drive|Dr|Boulevard|Blvd|Crescent|Cres|Court|Ct|Place|Pl|Way|Lane|Ln|Terrace|Ter|Parkway|Pkwy|Trail|Trl|Heights|Hts)\b\.?(?:\s+(?:East|West|North|South|E|W|N|S))?)/);
+  if (addrM) out.address = addrM[1].trim();
+
+  const cityM = flat.match(/(?:^|,|\n)\s*([A-Z][a-zA-Z]+(?:\s+[A-Z][a-zA-Z]+){0,2})\s*[\s,]\s*(?:ON|BC|AB|QC|SK|MB|NS|NB|PE|NL|YT|NT|NU|Ontario|British\sColumbia|Alberta|Quebec)\b/m);
+  if (cityM) {
+    let city = cityM[1].trim();
+    const streetSuffixes = /\b(?:Street|St|Road|Rd|Avenue|Ave|Drive|Dr|Boulevard|Blvd|Crescent|Cres|Court|Ct|Place|Pl|Way|Lane|Ln|Terrace|Ter|Parkway|Pkwy|Trail|Trl|Heights|Hts)$/i;
+    if (streetSuffixes.test(city)) city = city.split(/\s+/).pop();
+    out.city = city;
+  }
+
+  const rentM = oneLine.match(/(?:rent(?:al)?(?:\s?income)?|monthly\s?rent)[^\d$]{0,20}\$?\s?(\d[\d,]*)/i);
+  if (rentM) {
+    const r = parseInt(rentM[1].replace(/,/g, ''));
+    if (r > 500 && r < 50000) out.estRentalIncome = r;
+  }
+
+  if (!url) {
+    const urlM = oneLine.match(/https?:\/\/[^\s)>"']+/);
+    if (urlM) out.url = urlM[0];
+  } else out.url = url;
+
+  // Parking — "Parking: 2", "Total Parking Spaces: 2", "2 parking", "Garage Spaces: 2"
+  let parkingM = oneLine.match(/(?:total\s+)?parking(?:\s+spaces?)?\s*[:\-]\s*(\d+)/i);
+  if (!parkingM) parkingM = oneLine.match(/garage\s+spaces?\s*[:\-]\s*(\d+)/i);
+  if (!parkingM) parkingM = oneLine.match(/(\d+)\s+parking\s+spaces?/i);
+  if (parkingM) {
+    const n = parseInt(parkingM[1], 10);
+    if (n >= 0 && n <= 20) out.parkingSpaces = n;
+  }
+
+  // Locker — check yes/no patterns first to avoid the numeric regex grabbing a digit
+  // from a neighbouring field (e.g. "Garage Spaces: 2 Locker: None").
+  if (/\bno\s+lockers?\b/i.test(oneLine) || /lockers?\s*[:\-]\s*(?:no|none)\b/i.test(oneLine)) {
+    out.lockers = 0;
+  } else {
+    let lockerM = oneLine.match(/lockers?\s*[:\-]\s*(\d+)/i);
+    if (!lockerM) {
+      // "2 Lockers" — must come immediately before "Locker(s)" with the digit acting as
+      // the count. Anchor with the word "Lockers" right after the digit, and only allow
+      // it to be preceded by a space (not a colon or another digit).
+      lockerM = oneLine.match(/(?:^|\s)(\d+)\s+lockers?\b/i);
+    }
+    if (lockerM) {
+      const n = parseInt(lockerM[1], 10);
+      if (n >= 0 && n <= 10) out.lockers = n;
+    } else if (/lockers?\s*[:\-]\s*(?:yes|owned|included|exclusive)/i.test(oneLine) || /\bhas\s+lockers?\b/i.test(oneLine)) {
+      out.lockers = 1;
+    }
+  }
+
+  // MLS# — handles "MLS#: C7654321", "MLS® C7654321", "MLS Number C1234567", or bare "C7654321"
+  // when preceded by "MLS" within ~15 chars. TRREB-style is one letter + 7 digits; other
+  // boards may be all digits (7–10) or letters+digits.
+  const mlsM = oneLine.match(/MLS(?:\s?®)?\s*(?:#|number|no\.?|id)?\s*[:#]?\s*([A-Z]\d{6,10}|\d{7,10})/i);
+  if (mlsM) out.mlsNumber = mlsM[1].toUpperCase();
+
+  // Builder / Developer — keyword-prefixed patterns. Capture up to common terminators.
+  const builderPatterns = [
+    /developer\s*[:\-]\s*([A-Z][^\n;|]{1,60}?)(?=\s*(?:[\.,\n;|]|$))/i,
+    /builder\s*[:\-]\s*([A-Z][^\n;|]{1,60}?)(?=\s*(?:[\.,\n;|]|$))/i,
+    /developed\s+by\s+([A-Z][^\n;|]{1,60}?)(?=\s*(?:[\.,\n;|]|$))/i,
+    /built\s+by\s+([A-Z][^\n;|]{1,60}?)(?=\s*(?:[\.,\n;|]|$))/i,
+    /brought\s+to\s+you\s+by\s+([A-Z][^\n;|]{1,60}?)(?=\s*(?:[\.,\n;|]|$))/i,
+  ];
+  for (const re of builderPatterns) {
+    const bm = flat.match(re);
+    if (bm) {
+      const b = bm[1].replace(/\s+/g, ' ').trim();
+      // Reject obvious false positives (e.g., a sentence captured by the pattern)
+      if (b.length >= 2 && !/^(the|a|an|this|that)\s/i.test(b)) {
+        out.builder = b;
+        break;
+      }
+    }
+  }
+
+  return out;
+}
+
+function updateSmartPastePreview() {
+  const text = $('#sp-text')?.value || '';
+  const url = $('#sp-url')?.value || '';
+  const parsed = parseListingText(text, url);
+  const preview = $('#sp-preview');
+  if (!preview) return;
+  const lines = [];
+  if (parsed.price) lines.push(`Price <b>${fmt$(parsed.price)}</b>`);
+  if (parsed.address) lines.push(`Addr <b>${esc(parsed.address)}</b>`);
+  if (parsed.city) lines.push(`City <b>${esc(parsed.city)}</b>`);
+  if (parsed.propertyType) lines.push(`Type <b>${esc(parsed.propertyType)}</b>`);
+  if (parsed.beds != null) lines.push(`Beds <b>${parsed.beds}</b>`);
+  if (parsed.baths != null) lines.push(`Baths <b>${parsed.baths}</b>`);
+  if (parsed.sizeSqft) lines.push(`<b>${parsed.sizeSqft.toLocaleString()} sf</b>`);
+  if (parsed.maintenanceFee) lines.push(`Maint <b>${fmt$(parsed.maintenanceFee)}/mo</b>`);
+  if (parsed.propertyTax) lines.push(`Tax <b>${fmt$(parsed.propertyTax)}/yr</b>`);
+  if (parsed.estRentalIncome) lines.push(`Rent <b>${fmt$(parsed.estRentalIncome)}/mo</b>`);
+  if (parsed.mlsNumber) lines.push(`MLS# <b>${esc(parsed.mlsNumber)}</b>`);
+  if (parsed.builder) lines.push(`Builder <b>${esc(parsed.builder)}</b>`);
+  if (parsed.parkingSpaces != null) lines.push(`Parking <b>${parsed.parkingSpaces}</b>`);
+  if (parsed.lockers != null) lines.push(`Locker <b>${parsed.lockers > 0 ? (parsed.lockers === 1 ? 'Yes' : parsed.lockers) : 'No'}</b>`);
+  preview.innerHTML = lines.length ? '<b>Detected:</b> ' + lines.join(' · ') : 'No fields detected yet.';
+}
+
+function applySmartPaste() {
+  const text = $('#sp-text')?.value || '';
+  const url = $('#sp-url')?.value || '';
+  if (!text.trim() && !url.trim()) { toast('Paste something first'); return; }
+  const parsed = parseListingText(text, url);
+  const stash = window._editStash || { listingId:null, cur:{}, assigned:[] };
+  const c = stash.cur;
+  if (parsed.url) c.url = parsed.url;
+  if (parsed.address) c.addr = parsed.address;
+  if (parsed.city) c.city = parsed.city;
+  if (parsed.propertyType) c.type = parsed.propertyType;
+  if (parsed.price) c.price = String(parsed.price);
+  if (parsed.beds != null) c.beds = String(parsed.beds);
+  if (parsed.baths != null) c.baths = String(parsed.baths);
+  if (parsed.sizeSqft) c.size = String(parsed.sizeSqft);
+  if (parsed.maintenanceFee) c.maint = String(parsed.maintenanceFee);
+  if (parsed.propertyTax) c.tax = String(parsed.propertyTax);
+  if (parsed.estRentalIncome) c.rent = String(parsed.estRentalIncome);
+  if (parsed.mlsNumber) c.mls = parsed.mlsNumber;
+  if (parsed.builder) c.builder = parsed.builder;
+  if (parsed.parkingSpaces != null) c.parking = String(parsed.parkingSpaces);
+  if (parsed.lockers != null) c.locker = String(parsed.lockers);
+  window._editStash = stash;
+  closeModal();
+  setTimeout(reopenListingEdit, 60);
+  toast('Fields filled — review and save');
+}
+
+// ---- Quick brief ------------------------------------
+function briefListing(id) {
+  const l = state.listings.find(x => x.id === id);
+  if (!l) return;
+  const cfYes = computeCashflow(l, { withRental: true });
+  const cfNo = computeCashflow(l, { withRental: false });
+  const inCompare = compareSelection.includes(id);
+
+  showModal({
+    title: 'Brief',
+    body: `<div class="brief-wrap">
+      <div class="addr">${esc(l.address || 'Untitled')}</div>
+      <div class="city-type">${esc(l.city||'')} · ${esc(l.propertyType||'')}${l.mlsNumber?' · MLS '+esc(l.mlsNumber):''}</div>
+      ${l.builder?`<div class="muted smaller" style="margin-top:2px">Builder · ${esc(l.builder)}</div>`:''}
+      <div class="price-big">${fmt$(l.price)}</div>
+      <div class="specs-grid">
+        <div class="stat"><div class="lbl">Bed / Bath</div><div class="val">${l.beds||'—'} / ${l.baths||'—'}</div></div>
+        <div class="stat"><div class="lbl">Size</div><div class="val">${l.sizeSqft ? (+l.sizeSqft).toLocaleString()+' sf' : '—'}</div></div>
+        <div class="stat"><div class="lbl">Parking / Locker</div><div class="val">${l.parkingSpaces!=null?l.parkingSpaces:'—'} / ${l.lockers!=null?(l.lockers>0?l.lockers:'none'):'—'}</div></div>
+        <div class="stat"><div class="lbl">Price / sf</div><div class="val">${fmt$psf(pricePsf(l))}</div></div>
+        <div class="stat"><div class="lbl">Maint / mo</div><div class="val">${fmt$(l.maintenanceFee)}${maintPsf(l)?'<div class="muted smaller">'+fmt$psfm(maintPsf(l))+'</div>':''}</div></div>
+        <div class="stat"><div class="lbl">Tax / yr</div><div class="val">${fmt$(l.propertyTax)}</div></div>
+        <div class="stat"><div class="lbl">Est Rent / mo</div><div class="val">${fmt$(l.estRentalIncome)}${rentPsf(l)?'<div class="muted smaller">'+fmt$psfm(rentPsf(l))+'</div>':''}</div></div>
+        <div class="stat"><div class="lbl">Total cost / sf</div><div class="val">${fmt$psfm(totalCostPsf(l))}<div class="muted smaller">mortgage + tax + maint + ins</div></div></div>
+        <div class="stat"><div class="lbl">CF w/o rent</div><div class="val" style="color:${cfNo.netMonthly>=0?'var(--good)':'var(--bad)'}">${fmtMoneySigned(cfNo.netMonthly)}</div></div>
+        <div class="stat"><div class="lbl">CF w/ rent</div><div class="val" style="color:${cfYes.netMonthly>=0?'var(--good)':'var(--bad)'}">${fmtMoneySigned(cfYes.netMonthly)}</div></div>
+      </div>
+      ${l.quickBrief ? `<div class="talking"><b>Talking points</b><br>${esc(l.quickBrief)}</div>` : ''}
+      ${l.realmasterUrl ? `<div class="url-block"><a href="${esc(l.realmasterUrl)}" target="_blank" rel="noopener">${esc(l.realmasterUrl)}</a></div>` : ''}
+    </div>`,
+    footer: `
+      <button class="btn ghost" onclick="closeModal()">Close</button>
+      <div style="flex:1"></div>
+      <button class="btn ghost" onclick="closeModal(); setTimeout(()=>editListing('${l.id}'), 60)">Edit</button>
+      <button class="btn ghost" onclick="toggleCompare('${l.id}'); closeModal()">${inCompare?'✓ In Compare':'+ Compare'}</button>
+      ${l.realmasterUrl ? `<button class="btn" onclick="shareListing('${l.id}', event)">Share</button>` : ''}
+    `
+  });
+}
+
+// ---- Share ------------------------------------------
+async function shareListing(id, ev) {
+  if (ev) ev.stopPropagation();
+  const l = state.listings.find(x => x.id === id);
+  if (!l || !l.realmasterUrl) { toast('No listing URL'); return; }
+  const url = l.realmasterUrl;
+  if (navigator.share) {
+    try { await navigator.share({ url, title: l.address || 'Listing' }); return; } catch (e) {}
+  }
+  try { await navigator.clipboard.writeText(url); toast('Link copied'); }
+  catch (e) {
+    const ta = document.createElement('textarea');
+    ta.value = url; document.body.appendChild(ta); ta.select();
+    try { document.execCommand('copy'); toast('Link copied'); } catch (_) { toast('Could not copy'); }
+    ta.remove();
+  }
+}
+
+// ---- Sample data ------------------------------------
+function loadSampleData() {
+  if (state.clients.length || state.listings.length) {
+    if (!confirm('Add sample data to your current data?')) return;
+  }
+  const cli1 = { id: uid(), name:'Wei Chen (Sample)', phone:'416-555-0100', email:'wei@example.com', notes:'Investor — needs positive cashflow.', createdAt: new Date().toISOString(),
+    criteria: { locations:['Toronto','North York'], propertyTypes:['Condo'], budgetMin:500000, budgetMax:850000, bedsMin:2, bathsMin:1, sizeMin:700, cashflowRequired:true, cashflowMin:0, cashflowWithRental:true, matchThreshold:70, specialRequirements:'Near subway', weights:{location:2,type:1,price:2,beds:1,baths:0.5,size:1,cashflow:2} } };
+  const cli2 = { id: uid(), name:'The Patel Family (Sample)', phone:'905-555-0102', email:'patel@example.com', notes:'First-time buyers, 2 kids — owner-occupied.', createdAt: new Date().toISOString(),
+    criteria: { locations:['Markham','Richmond Hill','Vaughan'], propertyTypes:['Townhouse','Semi-Detached','Detached'], budgetMin:900000, budgetMax:1400000, bedsMin:3, bathsMin:2, sizeMin:1500, cashflowRequired:false, cashflowMin:0, cashflowWithRental:false, matchThreshold:70, specialRequirements:'Good schools', weights:{location:2,type:1,price:2,beds:1,baths:0.5,size:1,cashflow:2} } };
+  state.clients.push(cli1, cli2);
+
+  state.listings.push(
+    { id:uid(), realmasterUrl:'https://www.realtor.ca/real-estate/sample-1', address:'404-100 Yonge St', city:'Toronto', propertyType:'Condo', price:725000, beds:2, baths:2, sizeSqft:820, maintenanceFee:580, propertyTax:2900, estRentalIncome:3000, quickBrief:'2-bed corner unit, south-facing, 3 min walk to King subway. Tenanted at $3K/mo.', status:'to_show', assignedClientIds:[cli1.id], showings:[], createdAt:new Date().toISOString() },
+    { id:uid(), realmasterUrl:'https://www.realmaster.com/en/sample-2', address:'12 Maple Ave', city:'Markham', propertyType:'Townhouse', price:1199000, beds:3, baths:3, sizeSqft:1800, maintenanceFee:0, propertyTax:4800, estRentalIncome:3500, quickBrief:'End-unit freehold townhouse, finished basement, walk to top-rated school.', status:'to_show', assignedClientIds:[cli2.id], showings:[], createdAt:new Date().toISOString() },
+    { id:uid(), realmasterUrl:'https://housesigma.com/sample-3', address:'1502-555 Bay St', city:'Toronto', propertyType:'Condo', price:649000, beds:1, baths:1, sizeSqft:580, maintenanceFee:520, propertyTax:2400, estRentalIncome:2400, quickBrief:'1+den high-floor, lake view. Smaller than wanted but well under budget.', status:'to_show', assignedClientIds:[cli1.id], showings:[], createdAt:new Date().toISOString() },
+    { id:uid(), realmasterUrl:'https://www.realtor.ca/sample-4', address:'45 Birch Cres', city:'Richmond Hill', propertyType:'Detached', price:1599000, beds:4, baths:3, sizeSqft:2400, maintenanceFee:0, propertyTax:6200, estRentalIncome:0, quickBrief:'Renovated detached, finished basement, big lot. Slight stretch — show as upside option.', status:'to_show', assignedClientIds:[cli2.id], showings:[], createdAt:new Date().toISOString() }
+  );
+  save(); toast('Sample data loaded'); render();
+}
+
+// ---- Settings ---------------------------------------
+function openSettings() {
+  const s = state.settings;
+  const lastPush = sync.lastPushAt ? new Date(sync.lastPushAt).toLocaleString() : 'never';
+  const lastPull = sync.lastPullAt ? new Date(sync.lastPullAt).toLocaleString() : 'never';
+
+  showModal({
+    title: 'Settings',
+    body: `<div class="stack">
+
+      <div class="group">
+        <h3>Cloud sync — GitHub Gist</h3>
+        <div class="group-sub">Sync data across iPhone, iPad, Android, laptop. Free. Setup once per device.</div>
+        <label class="chip-check ${sync.enabled?'on':''}" onclick="toggleChip(this, event)"><input id="s-sync" type="checkbox" ${sync.enabled?'checked':''}>Enable cloud sync</label>
+        <div class="field" style="margin-top:12px">
+          <label>GitHub personal access token <span class="muted smaller">(gist scope only)</span></label>
+          <input id="s-token" type="password" value="${esc(sync.token||'')}" placeholder="ghp_xxxxxxxxxxxxxxxxxxxx" autocomplete="off">
+        </div>
+        <div class="field">
+          <label>Gist ID <span class="muted smaller">(or leave blank — we'll create one)</span></label>
+          <input id="s-gistid" value="${esc(sync.gistId||'')}" placeholder="e.g. a1b2c3d4e5f6…">
+        </div>
+        <div class="muted smaller" style="margin-bottom:12px">Last push: ${lastPush}<br>Last pull: ${lastPull}</div>
+        <div style="display:flex; gap:8px; flex-wrap:wrap">
+          <button class="btn" onclick="saveSyncSettings()">Save sync</button>
+          <button class="btn ghost" onclick="manualPull()">Pull now</button>
+          <button class="btn ghost" onclick="manualPush()">Push now</button>
+        </div>
+        <details style="margin-top:12px">
+          <summary>How to set up (5 min)</summary>
+          <ol style="line-height:1.7; padding-left:20px; margin:8px 0">
+            <li>Go to <b>github.com</b> → sign in → Settings → Developer settings → Personal access tokens → Tokens (classic) → Generate new token</li>
+            <li>Name: "Showings"; expiration: No expiration (or 1 year); scopes: check only <b>gist</b></li>
+            <li>Copy the token (you'll only see it once) and paste it above</li>
+            <li>Leave Gist ID blank, tap <b>Save sync</b> — the app creates a private gist and remembers its ID</li>
+            <li>On other devices: paste the same token AND the gist ID (find it in this Settings panel after the first save), then tap Save sync. Done.</li>
+          </ol>
+        </details>
+      </div>
+
+      <div class="group">
+        <h3>Mortgage defaults</h3>
+        <div class="group-sub">Used by the cashflow calculator.</div>
+        <div class="row2">
+          <div class="field"><label>Down %</label><input id="s-down" type="number" inputmode="decimal" value="${s.defaultDownPct}"></div>
+          <div class="field"><label>Rate % (annual)</label><input id="s-rate" type="number" step="0.01" inputmode="decimal" value="${s.defaultMortgageRate}"></div>
+        </div>
+        <div class="row2">
+          <div class="field"><label>Amortization (years)</label><input id="s-amort" type="number" inputmode="numeric" value="${s.defaultAmortYears}"></div>
+          <div class="field"><label>Insurance / mo ($)</label><input id="s-ins" type="number" inputmode="numeric" value="${s.defaultInsuranceMonthly}"></div>
+        </div>
+      </div>
+
+      <div class="group">
+        <h3>Backup</h3>
+        <div class="group-sub">Export a JSON file. Import to restore.</div>
+        <div style="display:flex; gap:8px; flex-wrap:wrap">
+          <button class="btn ghost" onclick="exportData()">Export JSON</button>
+          <button class="btn ghost" onclick="document.getElementById('import-file').click()">Import JSON</button>
+          <input id="import-file" type="file" accept="application/json,.json" class="hidden" onchange="importData(this.files[0])">
+          <button class="btn ghost danger" onclick="if(confirm('Erase all local data?')){state=structuredClone(DEFAULT_DATA);save();closeModal();render();toast('Erased');}">Erase device</button>
+        </div>
+      </div>
+
+      <div class="group">
+        <h3>Install</h3>
+        <div class="group-sub" style="margin-bottom:0; line-height:1.6">
+          <b>iPhone / iPad</b>: Safari → Share → Add to Home Screen<br>
+          <b>Android</b>: Chrome menu → Install app<br>
+          <b>Mac / Windows</b>: Chrome address bar → Install icon
+        </div>
+      </div>
+
+      <div class="muted smaller" style="text-align:center">${state.clients.length} clients · ${state.listings.length} listings</div>
+    </div>`,
+    footer: `<button class="btn ghost" onclick="closeModal()">Close</button><div style="flex:1"></div><button class="btn" onclick="saveSettings()">Save defaults</button>`
+  });
+}
+
+function saveSettings() {
+  state.settings.defaultDownPct = +$('#s-down').value || 20;
+  state.settings.defaultMortgageRate = +$('#s-rate').value || 5;
+  state.settings.defaultAmortYears = +$('#s-amort').value || 25;
+  state.settings.defaultInsuranceMonthly = +$('#s-ins').value || 100;
+  save(); closeModal(); render(); toast('Settings saved');
+}
+
+async function saveSyncSettings() {
+  const enabled = $('#s-sync').checked;
+  const token = $('#s-token').value.trim();
+  let gistId = $('#s-gistid').value.trim();
+  if (enabled && !token) { toast('Token required'); return; }
+  sync.enabled = enabled; sync.token = token;
+  if (enabled && !gistId) {
+    try {
+      toast('Creating gist…');
+      gistId = await createGist();
+      sync.gistId = gistId;
+      saveSyncConfig();
+      toast('Gist created — ID saved');
+      // Refresh modal so the gist ID shows
+      openSettings();
+    } catch (e) {
+      toast('Failed: ' + e.message);
+      return;
+    }
+  } else {
+    sync.gistId = gistId;
+    saveSyncConfig();
+  }
+  setSyncStatus(enabled ? 'live' : null);
+  if (enabled) {
+    await pullFromGist(false);
+    schedulePush();
+  }
+  toast('Sync settings saved');
+}
+
+async function manualPull() { await pullFromGist(false); }
+async function manualPush() { await pushToGist(); toast('Pushed'); }
+
+function exportData() {
+  const blob = new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = `showings-backup-${new Date().toISOString().slice(0,10)}.json`;
+  document.body.appendChild(a); a.click(); a.remove();
+  URL.revokeObjectURL(url); toast('Exported');
+}
+function importData(file) {
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    try {
+      const d = JSON.parse(reader.result);
+      if (!d.clients || !d.listings) throw new Error('Invalid file');
+      if (!confirm(`Replace current data with ${d.clients.length} clients and ${d.listings.length} listings?`)) return;
+      state = d;
+      if (!state.settings) state.settings = structuredClone(DEFAULT_DATA.settings);
+      save(); closeModal(); render(); toast('Imported');
+    } catch (e) { alert('Could not import: ' + e.message); }
+  };
+  reader.readAsText(file);
+}
+
+// ---- Modal ------------------------------------------
+function showModal({ title, body, footer }) {
+  const m = $('#modal');
+  m.innerHTML = `
+    <div class="modal-header">
+      <h2>${esc(title)}</h2>
+      <button class="icon-btn" onclick="closeModal()" aria-label="Close">✕</button>
+    </div>
+    <div class="modal-body">${body}</div>
+    <div class="modal-footer">${footer||''}</div>
+  `;
+  $('#modal-backdrop').classList.add('open');
+  document.body.style.overflow = 'hidden';
+}
+function closeModal() {
+  $('#modal-backdrop').classList.remove('open');
+  $('#modal').innerHTML = '';
+  document.body.style.overflow = '';
+}
+function onBackdropClick(e) {
+  if (e.target.id === 'modal-backdrop') closeModal();
+}
+
+// ---- Boot -------------------------------------------
+switchTab('clients');
+setSyncStatus(sync.enabled ? 'live' : null);
+if (sync.enabled && sync.gistId && sync.token) {
+  pullFromGist(true);
+}
+// ESC to close modal
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeModal(); });
+
+// Ensure data is pushed before unload
+window.addEventListener('beforeunload', () => {
+  if (sync.enabled && _pushTimer) {
+    clearTimeout(_pushTimer);
+    pushToGist();
+  }
+});
+</script>
+</body>
+</html>
