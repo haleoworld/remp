@@ -8,6 +8,16 @@
 <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)" />
 <meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)" />
 <title>Showings</title>
+<script>
+  // Apply saved theme before first paint to avoid a flash of the wrong colors.
+  (function(){
+    try {
+      var t = localStorage.getItem('showings_theme') || 'auto';
+      document.documentElement.setAttribute('data-theme', t);
+    } catch(e) { document.documentElement.setAttribute('data-theme', 'auto'); }
+  })();
+</script>
+<script src="https://accounts.google.com/gsi/client" async defer></script>
 <link rel="manifest" href='data:application/manifest+json,{"name":"Showings","short_name":"Showings","start_url":".","display":"standalone","background_color":"%23ffffff","theme_color":"%23000000","icons":[{"src":"data:image/svg+xml;utf8,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 192 192%22><rect width=%22192%22 height=%22192%22 rx=%2240%22 fill=%22%23000000%22/><text x=%2296%22 y=%22132%22 font-size=%22112%22 text-anchor=%22middle%22 fill=%22white%22 font-family=%22-apple-system,sans-serif%22 font-weight=%22800%22>S</text></svg>","sizes":"192x192","type":"image/svg+xml"}]}' />
 <style>
   :root {
@@ -27,8 +37,23 @@
     --header-bg: rgba(255,255,255,0.85);
     --shadow: 0 0 0 1px rgba(0,0,0,.04);
   }
+  /* Explicit dark theme */
+  :root[data-theme="dark"] {
+    --bg: #000000;
+    --bg-soft: #16181c;
+    --text: #e7e9ea;
+    --text-soft: #71767b;
+    --muted: #71767b;
+    --border: #2f3336;
+    --border-strong: #3e4144;
+    --accent: #ffffff;
+    --accent-text: #0f1419;
+    --hover: #16181c;
+    --header-bg: rgba(0,0,0,0.85);
+  }
+  /* Auto theme follows the OS when set to dark */
   @media (prefers-color-scheme: dark) {
-    :root {
+    :root[data-theme="auto"] {
       --bg: #000000;
       --bg-soft: #16181c;
       --text: #e7e9ea;
@@ -457,15 +482,93 @@
   }
   .filter-chip:hover { background: var(--hover); }
   .filter-chip.on { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
+
+  /* Auth gate */
+  .auth-wrap {
+    min-height: 100vh; min-height: 100dvh;
+    display: flex; align-items: center; justify-content: center;
+    padding: 24px;
+    background: var(--bg);
+  }
+  .auth-card {
+    max-width: 380px; width: 100%;
+    text-align: center;
+  }
+  .auth-card .logo {
+    width: 64px; height: 64px;
+    border-radius: 16px;
+    background: var(--accent); color: var(--accent-text);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 32px; font-weight: 800;
+    margin: 0 auto 24px;
+  }
+  .auth-card h1 { margin: 0 0 8px; font-size: 28px; font-weight: 800; letter-spacing: -0.02em; }
+  .auth-card .tagline { color: var(--text-soft); margin: 0 0 32px; }
+  .auth-buttons { display: flex; flex-direction: column; gap: 12px; }
+  #g-signin { display: flex; justify-content: center; min-height: 44px; }
+  .auth-footer { margin-top: 24px; font-size: 13px; color: var(--muted); }
+  .auth-footer button { color: var(--text-soft); text-decoration: underline; font-size: 13px; }
+  .auth-error { color: var(--bad); margin-top: 12px; font-size: 14px; }
+  .auth-passkey-btn {
+    display: flex; align-items: center; justify-content: center; gap: 10px;
+    width: 100%; padding: 14px;
+    background: var(--accent); color: var(--accent-text);
+    border-radius: 12px;
+    font-weight: 700; font-size: 16px;
+  }
+  .auth-passkey-btn:hover { opacity: 0.9; }
+  .auth-divider {
+    display: flex; align-items: center; gap: 10px;
+    color: var(--muted); font-size: 12px; margin: 4px 0;
+  }
+  .auth-divider::before, .auth-divider::after { content: ''; flex: 1; height: 1px; background: var(--border); }
+
+  /* Menu list (hamburger) */
+  .menu-list { margin: -16px; }
+  .menu-row {
+    display: flex; align-items: center; gap: 14px;
+    padding: 16px;
+    border-bottom: 1px solid var(--border);
+    cursor: pointer;
+    transition: background .12s;
+  }
+  .menu-row:active { background: var(--hover); }
+  @media (hover: hover) { .menu-row:hover { background: var(--hover); } }
+  .menu-row .m-icon { font-size: 20px; width: 26px; text-align: center; flex-shrink: 0; }
+  .menu-row .m-body { flex: 1; min-width: 0; }
+  .menu-row .m-title { font-weight: 700; font-size: 15px; }
+  .menu-row .m-sub { color: var(--muted); font-size: 13px; margin-top: 1px; }
+  .menu-row .m-chevron { color: var(--muted); font-size: 18px; }
+  .menu-row .seg { flex-shrink: 0; }
 </style>
 </head>
 <body>
 
-<div class="app">
+<div class="auth-wrap" id="auth-gate" style="display:none">
+  <div class="auth-card">
+    <div class="logo">S</div>
+    <h1>Showings</h1>
+    <div class="tagline">Sign in to access your clients and listings.</div>
+    <div class="auth-buttons">
+      <button id="auth-passkey-btn" class="auth-passkey-btn" style="display:none" onclick="unlockWithPasskey()">
+        <span>👤</span><span>Unlock with Face ID / passkey</span>
+      </button>
+      <div id="auth-divider" class="auth-divider" style="display:none">OR</div>
+      <div id="g-signin"></div>
+      <div id="auth-error" class="auth-error" style="display:none"></div>
+    </div>
+    <div class="auth-footer">
+      <button onclick="bypassAuthForSetup()">First-time setup — configure Google sign-in</button>
+    </div>
+  </div>
+</div>
+
+<div class="app" id="app-shell" style="display:none">
   <header class="top">
     <h1 id="page-title">Showings</h1>
-    <span class="sync-dot" id="sync-dot" title="Tap settings to enable cloud sync"></span>
-    <button class="icon-btn" onclick="openSettings()" aria-label="Settings">⚙</button>
+    <span class="sync-dot" id="sync-dot" title="Tap menu to enable cloud sync"></span>
+    <button class="icon-btn" id="theme-btn" onclick="cycleTheme()" aria-label="Toggle theme">🌗</button>
+    <button class="icon-btn" onclick="openMenu()" aria-label="Menu">☰</button>
   </header>
 
   <main id="main"></main>
@@ -599,11 +702,11 @@ function numOrNull(v) { v = String(v||'').trim(); if (!v) return null; const n =
 function pricePsf(l)  { return (l && +l.price && +l.sizeSqft) ? (+l.price / +l.sizeSqft) : null; }
 function rentPsf(l)   { return (l && +l.estRentalIncome && +l.sizeSqft) ? (+l.estRentalIncome / +l.sizeSqft) : null; }
 function maintPsf(l)  { return (l && +l.maintenanceFee && +l.sizeSqft) ? (+l.maintenanceFee / +l.sizeSqft) : null; }
-function totalCostPsf(l) {
+function totalCostPsf(l, client) {
   // All-in monthly carrying cost / sqft: mortgage + tax/12 + maint + insurance, ÷ sqft.
   // Needs price + sqft. Other inputs (tax, maint) default to 0 if missing.
   if (!l || !+l.price || !+l.sizeSqft) return null;
-  const cf = computeCashflow(l, { withRental: false });
+  const cf = computeCashflow(l, { withRental: false, client });
   return cf.expenses / +l.sizeSqft;
 }
 function fmt$psf(n)   { return n == null ? '—' : '$' + Math.round(n).toLocaleString('en-CA') + '/sf'; }
@@ -619,6 +722,32 @@ function toast(msg) {
   const t = $('#toast'); t.textContent = msg; t.classList.add('show');
   clearTimeout(t._tid); t._tid = setTimeout(()=>t.classList.remove('show'), 1900);
 }
+
+// ---- Theme -----------------------------------------
+const THEME_KEY = 'showings_theme';
+const THEME_ICON = { auto: '🌗', light: '☀️', dark: '🌙' };
+const THEME_LABEL = { auto: 'Auto', light: 'Light', dark: 'Dark' };
+function loadTheme() { return localStorage.getItem(THEME_KEY) || 'auto'; }
+function applyTheme(t) {
+  document.documentElement.setAttribute('data-theme', t);
+  localStorage.setItem(THEME_KEY, t);
+  const btn = $('#theme-btn');
+  if (btn) { btn.textContent = THEME_ICON[t]; btn.title = 'Theme: ' + THEME_LABEL[t]; }
+  // Keep the browser chrome color in sync
+  const dark = t === 'dark' || (t === 'auto' && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
+  document.querySelectorAll('meta[name="theme-color"]').forEach(m => m.remove());
+  const meta = document.createElement('meta');
+  meta.name = 'theme-color';
+  meta.content = dark ? '#000000' : '#ffffff';
+  document.head.appendChild(meta);
+}
+function cycleTheme() {
+  const order = ['auto', 'light', 'dark'];
+  const next = order[(order.indexOf(loadTheme()) + 1) % order.length];
+  applyTheme(next);
+  toast('Theme: ' + THEME_LABEL[next]);
+}
+function setTheme(t) { applyTheme(t); }
 
 // ---- Scoring ---------------------------------------
 function locationMatches(listingCity, locations) {
@@ -669,7 +798,7 @@ function computeMatchScore(listing, client) {
     parts.push({ key: 'size', score: s, weight: w.size ?? 1 });
   }
   if (c.cashflowRequired) {
-    const cf = computeCashflow(listing, { withRental: c.cashflowWithRental });
+    const cf = computeCashflow(listing, { withRental: c.cashflowWithRental, client });
     const want = c.cashflowMin || 0;
     let s;
     if (cf.netMonthly >= want) s = 100;
@@ -726,12 +855,25 @@ function updateCashflowPreview() {
   el.innerHTML = renderCashflowPreviewContent(tmp);
 }
 
+// Resolve mortgage assumptions: a client's own override wins, else global defaults.
+function getMortgageParams(client) {
+  const g = state.settings;
+  const m = client && client.mortgage;
+  return {
+    downPct: (m && m.downPct != null) ? +m.downPct : g.defaultDownPct,
+    rate: (m && m.rate != null) ? +m.rate : g.defaultMortgageRate,
+    amortYears: (m && m.amortYears != null) ? +m.amortYears : g.defaultAmortYears,
+    insuranceMonthly: (m && m.insuranceMonthly != null) ? +m.insuranceMonthly : g.defaultInsuranceMonthly,
+  };
+}
+
 function computeCashflow(listing, opts={}) {
-  const settings = state.settings;
+  const mp = getMortgageParams(opts.client);
   const price = +listing.price || 0;
-  const downPct = listing.downPaymentPct != null ? +listing.downPaymentPct : settings.defaultDownPct;
-  const rate = listing.mortgageRate != null ? +listing.mortgageRate : settings.defaultMortgageRate;
-  const years = listing.amortYears != null ? +listing.amortYears : settings.defaultAmortYears;
+  // A per-listing override (rare) still wins over the client/global params.
+  const downPct = listing.downPaymentPct != null ? +listing.downPaymentPct : mp.downPct;
+  const rate = listing.mortgageRate != null ? +listing.mortgageRate : mp.rate;
+  const years = listing.amortYears != null ? +listing.amortYears : mp.amortYears;
   const principal = price * (1 - downPct/100);
   const r_eff = Math.pow(1 + (rate/100)/2, 1/6) - 1;
   const n = years * 12;
@@ -741,7 +883,7 @@ function computeCashflow(listing, opts={}) {
   }
   const propTaxMonthly = (+listing.propertyTax || 0) / 12;
   const maintMonthly = +listing.maintenanceFee || 0;
-  const insMonthly = listing.insuranceMonthly != null ? +listing.insuranceMonthly : settings.defaultInsuranceMonthly;
+  const insMonthly = listing.insuranceMonthly != null ? +listing.insuranceMonthly : mp.insuranceMonthly;
   const rental = opts.withRental ? (+listing.estRentalIncome || 0) : 0;
   const expenses = monthlyMortgage + propTaxMonthly + maintMonthly + insMonthly;
   const net = rental - expenses;
@@ -839,6 +981,213 @@ async function createGist() {
   }
   const gist = await res.json();
   return gist.id;
+}
+
+// ---- Auth (Google Sign-In + WebAuthn / Face ID) ----
+const AUTH_KEY      = 'showings_auth_v1';        // active session
+const AUTH_CFG_KEY  = 'showings_auth_cfg_v1';    // Client ID + allowed emails
+const PASSKEY_KEY   = 'showings_passkey_v1';     // per-device WebAuthn credential
+const AUTH_DURATION_MS = 90 * 24 * 60 * 60 * 1000; // 90 days
+
+function loadAuthCfg() {
+  try {
+    const raw = localStorage.getItem(AUTH_CFG_KEY);
+    return raw ? JSON.parse(raw) : { googleClientId: '', allowedEmails: [] };
+  } catch { return { googleClientId: '', allowedEmails: [] }; }
+}
+function saveAuthCfg(cfg) { localStorage.setItem(AUTH_CFG_KEY, JSON.stringify(cfg)); }
+
+function loadSession() {
+  try {
+    const raw = localStorage.getItem(AUTH_KEY);
+    if (!raw) return null;
+    const s = JSON.parse(raw);
+    if (s.expiresAt && s.expiresAt > Date.now()) return s;
+    // expired
+    localStorage.removeItem(AUTH_KEY);
+    return null;
+  } catch { return null; }
+}
+function saveSession(s) {
+  s.expiresAt = Date.now() + AUTH_DURATION_MS;
+  localStorage.setItem(AUTH_KEY, JSON.stringify(s));
+}
+function clearSession() { localStorage.removeItem(AUTH_KEY); }
+
+function loadPasskey() {
+  try {
+    const raw = localStorage.getItem(PASSKEY_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch { return null; }
+}
+function savePasskey(pk) { localStorage.setItem(PASSKEY_KEY, JSON.stringify(pk)); }
+function clearPasskey() { localStorage.removeItem(PASSKEY_KEY); }
+
+function isAuthEnabled() {
+  const cfg = loadAuthCfg();
+  return !!(cfg.googleClientId && cfg.allowedEmails && cfg.allowedEmails.length > 0);
+}
+function currentSession() { return loadSession(); }
+
+function decodeJwtPayload(token) {
+  const parts = token.split('.');
+  if (parts.length !== 3) throw new Error('Invalid token');
+  const b64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+  const pad = b64.length % 4 ? '='.repeat(4 - b64.length % 4) : '';
+  return JSON.parse(atob(b64 + pad));
+}
+
+// Render gate vs app
+function showAppShell() {
+  $('#auth-gate').style.display = 'none';
+  $('#app-shell').style.display = '';
+}
+function showAuthGate() {
+  $('#app-shell').style.display = 'none';
+  $('#auth-gate').style.display = 'flex';
+  // Wire Face ID button if passkey exists
+  const pk = loadPasskey();
+  if (pk && window.PublicKeyCredential) {
+    $('#auth-passkey-btn').style.display = '';
+    $('#auth-divider').style.display = '';
+  } else {
+    $('#auth-passkey-btn').style.display = 'none';
+    $('#auth-divider').style.display = 'none';
+  }
+  // Init Google Sign-In if config present and library loaded
+  const cfg = loadAuthCfg();
+  if (cfg.googleClientId && window.google?.accounts?.id) {
+    try {
+      google.accounts.id.initialize({
+        client_id: cfg.googleClientId,
+        callback: handleGoogleCredential,
+        auto_select: false,
+        cancel_on_tap_outside: false,
+      });
+      const target = $('#g-signin');
+      target.innerHTML = '';
+      google.accounts.id.renderButton(target, {
+        theme: 'outline', size: 'large', type: 'standard', shape: 'pill', text: 'signin_with',
+      });
+    } catch (e) {
+      showAuthError('Google sign-in setup error: ' + e.message);
+    }
+  } else if (cfg.googleClientId) {
+    // GIS library not loaded yet — wait for it
+    const wait = setInterval(() => {
+      if (window.google?.accounts?.id) { clearInterval(wait); showAuthGate(); }
+    }, 200);
+    setTimeout(() => clearInterval(wait), 5000);
+  }
+}
+function showAuthError(msg) {
+  const el = $('#auth-error');
+  el.textContent = msg;
+  el.style.display = '';
+}
+
+function handleGoogleCredential(resp) {
+  if (!resp || !resp.credential) { showAuthError('No credential returned'); return; }
+  try {
+    const payload = decodeJwtPayload(resp.credential);
+    const cfg = loadAuthCfg();
+    // Verify audience matches our Client ID — protects against token replay from other apps
+    if (payload.aud !== cfg.googleClientId) { showAuthError('Token audience mismatch'); return; }
+    if (payload.iss !== 'https://accounts.google.com' && payload.iss !== 'accounts.google.com') { showAuthError('Bad issuer'); return; }
+    if (payload.exp && payload.exp * 1000 < Date.now()) { showAuthError('Google token expired'); return; }
+    const email = (payload.email || '').toLowerCase();
+    const allowed = (cfg.allowedEmails || []).map(e => e.toLowerCase());
+    if (!allowed.includes(email)) {
+      showAuthError(`${email} is not on the allowed list. Sign out and try a different account.`);
+      try { google.accounts.id.disableAutoSelect(); } catch {}
+      return;
+    }
+    saveSession({ email, name: payload.name, picture: payload.picture, method: 'google' });
+    onAuthSuccess();
+  } catch (e) {
+    showAuthError('Sign-in failed: ' + e.message);
+  }
+}
+
+async function unlockWithPasskey() {
+  const pk = loadPasskey();
+  if (!pk) { showAuthError('No passkey registered on this device'); return; }
+  if (!window.PublicKeyCredential) { showAuthError('Passkeys not supported in this browser'); return; }
+  try {
+    const rawId = Uint8Array.from(atob(pk.credentialId), c => c.charCodeAt(0));
+    const challenge = crypto.getRandomValues(new Uint8Array(32));
+    const assertion = await navigator.credentials.get({
+      publicKey: {
+        challenge,
+        allowCredentials: [{ type: 'public-key', id: rawId, transports: ['internal'] }],
+        userVerification: 'required',
+        timeout: 60000,
+      }
+    });
+    if (!assertion) { showAuthError('Passkey unlock canceled'); return; }
+    saveSession({ email: pk.email, name: pk.name || pk.email, method: 'passkey' });
+    onAuthSuccess();
+  } catch (e) {
+    showAuthError('Passkey error: ' + (e.message || e));
+  }
+}
+
+async function registerPasskeyForCurrentUser() {
+  const sess = currentSession();
+  if (!sess) { toast('Sign in first'); return; }
+  if (!window.PublicKeyCredential) { toast('Passkeys not supported here'); return; }
+  try {
+    const challenge = crypto.getRandomValues(new Uint8Array(32));
+    const userIdBytes = new TextEncoder().encode(sess.email);
+    const cred = await navigator.credentials.create({
+      publicKey: {
+        challenge,
+        rp: { name: 'Showings', id: location.hostname },
+        user: {
+          id: userIdBytes,
+          name: sess.email,
+          displayName: sess.name || sess.email,
+        },
+        pubKeyCredParams: [{type: 'public-key', alg: -7}, {type: 'public-key', alg: -257}],
+        authenticatorSelection: {
+          authenticatorAttachment: 'platform',
+          userVerification: 'required',
+          residentKey: 'preferred',
+        },
+        timeout: 60000,
+        attestation: 'none',
+      }
+    });
+    const rawId = new Uint8Array(cred.rawId);
+    const idB64 = btoa(String.fromCharCode(...rawId));
+    savePasskey({ credentialId: idB64, email: sess.email, name: sess.name });
+    toast('Face ID / passkey registered on this device');
+  } catch (e) {
+    toast('Registration failed: ' + (e.message || e));
+  }
+}
+
+function onAuthSuccess() {
+  showAppShell();
+  switchTab('clients');
+  setSyncStatus(sync.enabled ? 'live' : null);
+  if (sync.enabled && sync.gistId && sync.token) pullFromGist(true);
+}
+
+function signOut() {
+  clearSession();
+  if (!isAuthEnabled()) { onAuthSuccess(); return; }
+  closeModal();
+  showAuthGate();
+}
+
+function bypassAuthForSetup() {
+  // Lets the user reach Settings to configure Google sign-in before auth is enforced.
+  // Auth gate re-appears on next reload once config is in place.
+  showAppShell();
+  switchTab('clients');
+  setTimeout(() => openAuthPage(), 200);
+  toast('Configure Account & Security, then reload.');
 }
 
 // ---- Routing / tabs --------------------------------
@@ -969,21 +1318,21 @@ function renderListingFeed(l, client) {
 
   // Finance line: price/sf, rent/sf (if data), maint/sf (if data), total cost/sf, cashflow
   const fin = [];
-  const psf = pricePsf(l), rentSf = rentPsf(l), maintSf = maintPsf(l), totSf = totalCostPsf(l);
+  const psf = pricePsf(l), rentSf = rentPsf(l), maintSf = maintPsf(l), totSf = totalCostPsf(l, client);
   if (psf) fin.push(`<span>${fmt$psf(psf)}</span>`);
   if (rentSf) fin.push(`<span>Rent ${fmt$psfm(rentSf)}</span>`);
   if (maintSf) fin.push(`<span>Maint ${fmt$psfm(maintSf)}</span>`);
   if (totSf) fin.push(`<span>Total ${fmt$psfm(totSf)}</span>`);
   if (l.price) {
     const withRent = (+l.estRentalIncome) > 0;
-    const cf = computeCashflow(l, { withRental: withRent });
+    const cf = computeCashflow(l, { withRental: withRent, client });
     const cfColor = cf.netMonthly >= 0 ? 'var(--good)' : 'var(--bad)';
     fin.push(`<span style="color:${cfColor}; font-weight:700">CF ${fmtMoneySigned(cf.netMonthly)}/mo${withRent ? '' : ' (no rent)'}</span>`);
   }
 
   const inCompare = compareSelection.includes(l.id);
 
-  return `<div class="listing-feed" onclick="briefListing('${l.id}')">
+  return `<div class="listing-feed" onclick="briefListing('${l.id}'${client?`, '${client.id}'`:''})">
     <div class="head">
       <div class="addr">
         <h3>${esc(l.address || 'Untitled')}</h3>
@@ -1029,8 +1378,8 @@ function renderCompare() {
   </div>`;
 
   const cols = listings.map(l => {
-    const cfYes = computeCashflow(l, { withRental: true });
-    const cfNo = computeCashflow(l, { withRental: false });
+    const cfYes = computeCashflow(l, { withRental: true, client: cmpClient });
+    const cfNo = computeCashflow(l, { withRental: false, client: cmpClient });
     const cfShown = withRental ? cfYes : cfNo;
     const score = cmpClient ? computeMatchScore(l, cmpClient).score : null;
     return `<div class="compare-col">
@@ -1050,7 +1399,7 @@ function renderCompare() {
         <dt>Tax / yr</dt><dd>${fmt$(l.propertyTax)}</dd>
         <dt>Est. Rent / mo</dt><dd>${fmt$(l.estRentalIncome)}${rentPsf(l)?' &nbsp;<span class="muted smaller">'+fmt$psfm(rentPsf(l))+'</span>':''}</dd>
         <dt>Mortgage / mo</dt><dd>${fmt$(cfYes.monthlyMortgage)}</dd>
-        <dt>Total cost / sf</dt><dd>${fmt$psfm(totalCostPsf(l))}</dd>
+        <dt>Total cost / sf</dt><dd>${fmt$psfm(totalCostPsf(l, cmpClient))}</dd>
         <dt>CF w/o rent</dt><dd style="color:${cfNo.netMonthly>=0?'var(--good)':'var(--bad)'}">${fmtMoneySigned(cfNo.netMonthly)}</dd>
         <dt>CF w/ rent</dt><dd style="color:${cfYes.netMonthly>=0?'var(--good)':'var(--bad)'}">${fmtMoneySigned(cfYes.netMonthly)}</dd>
       </dl>
@@ -1105,7 +1454,7 @@ function openClient(id) {
 
 function listingMiniRow(l, score, clientId, threshold) {
   const cli = state.clients.find(c => c.id === clientId);
-  const cf = computeCashflow(l, { withRental: cli?.criteria?.cashflowWithRental });
+  const cf = computeCashflow(l, { withRental: cli?.criteria?.cashflowWithRental, client: cli });
   const showing = (l.showings||[]).find(s => s.clientId === clientId);
   return `<div class="feed-item" style="margin:0 -14px; padding:10px 14px; border-bottom:1px solid var(--border)" onclick="closeModal(); setTimeout(()=>editListing('${l.id}'), 60)">
     <div class="body">
@@ -1195,6 +1544,21 @@ function editClient(id) {
         </div>
       </div>
 
+      <div class="group">
+        <h3>Mortgage assumptions</h3>
+        <div class="group-sub">Override the global defaults for this client's cashflow & match scoring.</div>
+        <label class="chip-check ${c.mortgage?'on':''}" onclick="toggleChip(this, event)"><input id="f-mtg-custom" type="checkbox" ${c.mortgage?'checked':''}>Use custom assumptions for this client</label>
+        <div class="row2" style="margin-top:12px">
+          <div class="field"><label>Down %</label><input id="f-mtg-down" type="number" inputmode="decimal" value="${c.mortgage?.downPct ?? state.settings.defaultDownPct}"></div>
+          <div class="field"><label>Rate % (annual)</label><input id="f-mtg-rate" type="number" step="0.01" inputmode="decimal" value="${c.mortgage?.rate ?? state.settings.defaultMortgageRate}"></div>
+        </div>
+        <div class="row2">
+          <div class="field"><label>Amortization (yrs)</label><input id="f-mtg-amort" type="number" inputmode="numeric" value="${c.mortgage?.amortYears ?? state.settings.defaultAmortYears}"></div>
+          <div class="field"><label>Insurance / mo ($)</label><input id="f-mtg-ins" type="number" inputmode="numeric" value="${c.mortgage?.insuranceMonthly ?? state.settings.defaultInsuranceMonthly}"></div>
+        </div>
+        <div class="muted smaller">When off, this client uses the global defaults (${state.settings.defaultDownPct}% down · ${state.settings.defaultMortgageRate}% · ${state.settings.defaultAmortYears}yr · $${state.settings.defaultInsuranceMonthly}/mo ins).</div>
+      </div>
+
       <div class="field"><label>Special requirements</label><textarea id="f-special" placeholder="e.g. south-facing, near subway, finished basement">${esc(c.criteria.specialRequirements||'')}</textarea></div>
       <div class="field"><label>Match threshold (% — minimum score to flag as a fit)</label><input id="f-thresh" type="number" inputmode="numeric" min="0" max="100" value="${c.criteria.matchThreshold||70}"></div>
     </div>`,
@@ -1212,12 +1576,20 @@ function saveClientForm(id, isNew) {
   const locations = Array.from(document.querySelectorAll('#f-locations .tag')).map(t => t.firstChild.textContent.trim()).filter(Boolean);
   const propertyTypes = Array.from(document.querySelectorAll('[data-ptype]')).filter(cb=>cb.checked).map(cb=>cb.dataset.ptype);
   const withRental = document.querySelector('#f-cfrent button.on')?.dataset.rent === '1';
+  const useCustomMtg = $('#f-mtg-custom')?.checked;
+  const mortgage = useCustomMtg ? {
+    downPct: numOrNull($('#f-mtg-down').value),
+    rate: numOrNull($('#f-mtg-rate').value),
+    amortYears: numOrNull($('#f-mtg-amort').value),
+    insuranceMonthly: numOrNull($('#f-mtg-ins').value),
+  } : null;
   const existing = state.clients.find(x => x.id === id);
   const c = {
     id, name,
     phone: $('#f-phone').value.trim(),
     email: $('#f-email').value.trim(),
     notes: $('#f-notes').value.trim(),
+    mortgage,
     createdAt: isNew ? new Date().toISOString() : (existing?.createdAt || new Date().toISOString()),
     criteria: {
       locations, propertyTypes,
@@ -1714,11 +2086,14 @@ function applySmartPaste() {
 }
 
 // ---- Quick brief ------------------------------------
-function briefListing(id) {
+function briefListing(id, clientId) {
   const l = state.listings.find(x => x.id === id);
   if (!l) return;
-  const cfYes = computeCashflow(l, { withRental: true });
-  const cfNo = computeCashflow(l, { withRental: false });
+  // Use the active client's mortgage assumptions if one is in context (e.g. filtered feed).
+  const client = clientId ? state.clients.find(c => c.id === clientId) : null;
+  const cfYes = computeCashflow(l, { withRental: true, client });
+  const cfNo = computeCashflow(l, { withRental: false, client });
+  const usingCustom = client && client.mortgage;
   const inCompare = compareSelection.includes(id);
 
   showModal({
@@ -1727,6 +2102,7 @@ function briefListing(id) {
       <div class="addr">${esc(l.address || 'Untitled')}</div>
       <div class="city-type">${esc(l.city||'')} · ${esc(l.propertyType||'')}${l.mlsNumber?' · MLS '+esc(l.mlsNumber):''}</div>
       ${l.builder?`<div class="muted smaller" style="margin-top:2px">Builder · ${esc(l.builder)}</div>`:''}
+      ${usingCustom?`<div class="muted smaller" style="margin-top:2px">Cashflow using ${esc(client.name)}'s mortgage assumptions</div>`:''}
       <div class="price-big">${fmt$(l.price)}</div>
       <div class="specs-grid">
         <div class="stat"><div class="lbl">Bed / Bath</div><div class="val">${l.beds||'—'} / ${l.baths||'—'}</div></div>
@@ -1736,7 +2112,7 @@ function briefListing(id) {
         <div class="stat"><div class="lbl">Maint / mo</div><div class="val">${fmt$(l.maintenanceFee)}${maintPsf(l)?'<div class="muted smaller">'+fmt$psfm(maintPsf(l))+'</div>':''}</div></div>
         <div class="stat"><div class="lbl">Tax / yr</div><div class="val">${fmt$(l.propertyTax)}</div></div>
         <div class="stat"><div class="lbl">Est Rent / mo</div><div class="val">${fmt$(l.estRentalIncome)}${rentPsf(l)?'<div class="muted smaller">'+fmt$psfm(rentPsf(l))+'</div>':''}</div></div>
-        <div class="stat"><div class="lbl">Total cost / sf</div><div class="val">${fmt$psfm(totalCostPsf(l))}<div class="muted smaller">mortgage + tax + maint + ins</div></div></div>
+        <div class="stat"><div class="lbl">Total cost / sf</div><div class="val">${fmt$psfm(totalCostPsf(l, client))}<div class="muted smaller">mortgage + tax + maint + ins</div></div></div>
         <div class="stat"><div class="lbl">CF w/o rent</div><div class="val" style="color:${cfNo.netMonthly>=0?'var(--good)':'var(--bad)'}">${fmtMoneySigned(cfNo.netMonthly)}</div></div>
         <div class="stat"><div class="lbl">CF w/ rent</div><div class="val" style="color:${cfYes.netMonthly>=0?'var(--good)':'var(--bad)'}">${fmtMoneySigned(cfYes.netMonthly)}</div></div>
       </div>
@@ -1792,82 +2168,220 @@ function loadSampleData() {
 }
 
 // ---- Settings ---------------------------------------
-function openSettings() {
-  const s = state.settings;
+// Backwards-compat alias
+function openSettings() { openMenu(); }
+
+// ---- Menu (hamburger) ------------------------------
+function openMenu() {
+  const sess = currentSession();
+  const themeNow = loadTheme();
+  const menu = [
+    { icon:'🔒', title:'Account & Security', sub: sess ? esc(sess.email) : 'Google Sign-In + Face ID', fn:'openAuthPage()' },
+    { icon:'☁️', title:'Cloud Sync', sub: sync.enabled ? 'On — GitHub Gist' : 'Off', fn:'openSyncPage()' },
+    { icon:'🏦', title:'Mortgage Defaults', sub:'Global cashflow assumptions', fn:'openMortgagePage()' },
+    { icon:'💾', title:'Backup & Data', sub:`${state.clients.length} clients · ${state.listings.length} listings`, fn:'openBackupPage()' },
+    { icon:'📲', title:'Install App', sub:'Add to home screen', fn:'openInstallPage()' },
+    { icon:'ℹ️', title:'About', sub:'Version & roadmap', fn:'openAboutPage()' },
+  ];
+  const themeRow = `<div class="menu-row" style="cursor:default">
+    <div class="m-icon">${THEME_ICON[themeNow]}</div>
+    <div class="m-body"><div class="m-title">Theme</div><div class="m-sub">Light, dark, or follow system</div></div>
+    <div class="seg">
+      ${['auto','light','dark'].map(t => `<button class="${themeNow===t?'on':''}" onclick="setTheme('${t}'); openMenu()">${THEME_LABEL[t]}</button>`).join('')}
+    </div>
+  </div>`;
+  showModal({
+    title: 'Menu',
+    body: `<div class="menu-list">
+      ${themeRow}
+      ${menu.map(m => `<div class="menu-row" onclick="${m.fn}">
+        <div class="m-icon">${m.icon}</div>
+        <div class="m-body"><div class="m-title">${m.title}</div><div class="m-sub">${m.sub}</div></div>
+        <div class="m-chevron">›</div>
+      </div>`).join('')}
+      ${sess ? `<div class="menu-row" onclick="signOut()">
+        <div class="m-icon">🚪</div>
+        <div class="m-body"><div class="m-title" style="color:var(--bad)">Sign out</div><div class="m-sub">${esc(sess.email)}</div></div>
+      </div>` : ''}
+    </div>`,
+    footer: `<button class="btn ghost full" onclick="closeModal()">Close</button>`
+  });
+}
+
+// ---- Settings pages --------------------------------
+function openAuthPage() {
+  const cfg = loadAuthCfg();
+  const sess = currentSession();
+  const pk = loadPasskey();
+  const expiresIn = sess ? Math.max(0, Math.floor((sess.expiresAt - Date.now()) / (24*60*60*1000))) : null;
+  showModal({
+    title: 'Account & Security',
+    onBack: 'openMenu()',
+    body: `<div class="stack">
+      <div class="group-sub">Gate the deployed URL with Google Sign-In + Face ID. Session lasts 90 days per device.</div>
+      ${sess ? `<div class="group">
+        <div><b>Signed in as</b> ${esc(sess.email)} <span class="muted smaller">(${sess.method === 'passkey' ? 'Face ID' : 'Google'})</span></div>
+        <div class="muted smaller">Session expires in ${expiresIn} day${expiresIn===1?'':'s'}</div>
+      </div>` : '<div class="muted smaller">Not signed in (auth bypassed for setup)</div>'}
+      <div class="field">
+        <label>Google OAuth Client ID</label>
+        <input id="s-gcid" value="${esc(cfg.googleClientId||'')}" placeholder="123456789-abc….apps.googleusercontent.com">
+      </div>
+      <div class="field">
+        <label>Allowed emails <span class="muted smaller">(comma-separated)</span></label>
+        <input id="s-emails" value="${esc((cfg.allowedEmails||[]).join(', '))}" placeholder="you@gmail.com">
+      </div>
+      <div style="display:flex; gap:8px; flex-wrap:wrap">
+        ${sess && !pk ? `<button class="btn ghost" onclick="registerPasskeyForCurrentUser()">Register Face ID here</button>` : ''}
+        ${pk ? `<button class="btn ghost" onclick="if(confirm('Forget this device\\'s Face ID?')){clearPasskey();toast('Forgotten'); openAuthPage();}">Forget Face ID here</button>` : ''}
+        ${sess ? `<button class="btn ghost danger" onclick="signOut()">Sign out</button>` : ''}
+      </div>
+      <details>
+        <summary>How to get a Google Client ID</summary>
+        <ol style="line-height:1.7; padding-left:20px; margin:8px 0">
+          <li>Go to <b>console.cloud.google.com</b> → sign in</li>
+          <li>Project dropdown → <b>New Project</b> "Showings" → Create</li>
+          <li><b>APIs & Services → OAuth consent screen</b> → External → fill name + email → save through steps → add yourself as a Test User</li>
+          <li><b>APIs & Services → Credentials</b> → Create Credentials → <b>OAuth client ID</b> → Web application</li>
+          <li>Add your Netlify URL under <b>Authorized JavaScript origins</b></li>
+          <li>Create → copy the Client ID → paste above. Full guide: GOOGLE-AUTH-SETUP.md</li>
+        </ol>
+      </details>
+    </div>`,
+    footer: `<button class="btn ghost" onclick="openMenu()">Back</button><div style="flex:1"></div><button class="btn" onclick="saveAuthSettings()">Save</button>`
+  });
+}
+
+function openSyncPage() {
   const lastPush = sync.lastPushAt ? new Date(sync.lastPushAt).toLocaleString() : 'never';
   const lastPull = sync.lastPullAt ? new Date(sync.lastPullAt).toLocaleString() : 'never';
-
   showModal({
-    title: 'Settings',
+    title: 'Cloud Sync',
+    onBack: 'openMenu()',
     body: `<div class="stack">
-
-      <div class="group">
-        <h3>Cloud sync — GitHub Gist</h3>
-        <div class="group-sub">Sync data across iPhone, iPad, Android, laptop. Free. Setup once per device.</div>
-        <label class="chip-check ${sync.enabled?'on':''}" onclick="toggleChip(this, event)"><input id="s-sync" type="checkbox" ${sync.enabled?'checked':''}>Enable cloud sync</label>
-        <div class="field" style="margin-top:12px">
-          <label>GitHub personal access token <span class="muted smaller">(gist scope only)</span></label>
-          <input id="s-token" type="password" value="${esc(sync.token||'')}" placeholder="ghp_xxxxxxxxxxxxxxxxxxxx" autocomplete="off">
-        </div>
-        <div class="field">
-          <label>Gist ID <span class="muted smaller">(or leave blank — we'll create one)</span></label>
-          <input id="s-gistid" value="${esc(sync.gistId||'')}" placeholder="e.g. a1b2c3d4e5f6…">
-        </div>
-        <div class="muted smaller" style="margin-bottom:12px">Last push: ${lastPush}<br>Last pull: ${lastPull}</div>
-        <div style="display:flex; gap:8px; flex-wrap:wrap">
-          <button class="btn" onclick="saveSyncSettings()">Save sync</button>
-          <button class="btn ghost" onclick="manualPull()">Pull now</button>
-          <button class="btn ghost" onclick="manualPush()">Push now</button>
-        </div>
-        <details style="margin-top:12px">
-          <summary>How to set up (5 min)</summary>
-          <ol style="line-height:1.7; padding-left:20px; margin:8px 0">
-            <li>Go to <b>github.com</b> → sign in → Settings → Developer settings → Personal access tokens → Tokens (classic) → Generate new token</li>
-            <li>Name: "Showings"; expiration: No expiration (or 1 year); scopes: check only <b>gist</b></li>
-            <li>Copy the token (you'll only see it once) and paste it above</li>
-            <li>Leave Gist ID blank, tap <b>Save sync</b> — the app creates a private gist and remembers its ID</li>
-            <li>On other devices: paste the same token AND the gist ID (find it in this Settings panel after the first save), then tap Save sync. Done.</li>
-          </ol>
-        </details>
+      <div class="group-sub">Sync data across iPhone, iPad, Android, laptop. Free. Set up once per device.</div>
+      <label class="chip-check ${sync.enabled?'on':''}" onclick="toggleChip(this, event)"><input id="s-sync" type="checkbox" ${sync.enabled?'checked':''}>Enable cloud sync</label>
+      <div class="field" style="margin-top:12px">
+        <label>GitHub personal access token <span class="muted smaller">(gist scope only)</span></label>
+        <input id="s-token" type="password" value="${esc(sync.token||'')}" placeholder="ghp_xxxxxxxxxxxxxxxxxxxx" autocomplete="off">
       </div>
-
-      <div class="group">
-        <h3>Mortgage defaults</h3>
-        <div class="group-sub">Used by the cashflow calculator.</div>
-        <div class="row2">
-          <div class="field"><label>Down %</label><input id="s-down" type="number" inputmode="decimal" value="${s.defaultDownPct}"></div>
-          <div class="field"><label>Rate % (annual)</label><input id="s-rate" type="number" step="0.01" inputmode="decimal" value="${s.defaultMortgageRate}"></div>
-        </div>
-        <div class="row2">
-          <div class="field"><label>Amortization (years)</label><input id="s-amort" type="number" inputmode="numeric" value="${s.defaultAmortYears}"></div>
-          <div class="field"><label>Insurance / mo ($)</label><input id="s-ins" type="number" inputmode="numeric" value="${s.defaultInsuranceMonthly}"></div>
-        </div>
+      <div class="field">
+        <label>Gist ID <span class="muted smaller">(blank = create new)</span></label>
+        <input id="s-gistid" value="${esc(sync.gistId||'')}" placeholder="a1b2c3d4e5f6…">
       </div>
-
-      <div class="group">
-        <h3>Backup</h3>
-        <div class="group-sub">Export a JSON file. Import to restore.</div>
-        <div style="display:flex; gap:8px; flex-wrap:wrap">
-          <button class="btn ghost" onclick="exportData()">Export JSON</button>
-          <button class="btn ghost" onclick="document.getElementById('import-file').click()">Import JSON</button>
-          <input id="import-file" type="file" accept="application/json,.json" class="hidden" onchange="importData(this.files[0])">
-          <button class="btn ghost danger" onclick="if(confirm('Erase all local data?')){state=structuredClone(DEFAULT_DATA);save();closeModal();render();toast('Erased');}">Erase device</button>
-        </div>
+      <div class="muted smaller">Last push: ${lastPush}<br>Last pull: ${lastPull}</div>
+      <div style="display:flex; gap:8px; flex-wrap:wrap">
+        <button class="btn" onclick="saveSyncSettings()">Save sync</button>
+        <button class="btn ghost" onclick="manualPull()">Pull now</button>
+        <button class="btn ghost" onclick="manualPush()">Push now</button>
       </div>
-
-      <div class="group">
-        <h3>Install</h3>
-        <div class="group-sub" style="margin-bottom:0; line-height:1.6">
-          <b>iPhone / iPad</b>: Safari → Share → Add to Home Screen<br>
-          <b>Android</b>: Chrome menu → Install app<br>
-          <b>Mac / Windows</b>: Chrome address bar → Install icon
-        </div>
-      </div>
-
-      <div class="muted smaller" style="text-align:center">${state.clients.length} clients · ${state.listings.length} listings</div>
+      <details>
+        <summary>How to set up (5 min)</summary>
+        <ol style="line-height:1.7; padding-left:20px; margin:8px 0">
+          <li>github.com → Settings → Developer settings → Personal access tokens → Tokens (classic) → Generate</li>
+          <li>Scope: check only <b>gist</b>. Copy the token, paste above.</li>
+          <li>Leave Gist ID blank, tap Save sync — a private gist is created.</li>
+          <li>On other devices: paste the same token AND the Gist ID shown here. Full guide: SYNC-SETUP.md</li>
+        </ol>
+      </details>
     </div>`,
-    footer: `<button class="btn ghost" onclick="closeModal()">Close</button><div style="flex:1"></div><button class="btn" onclick="saveSettings()">Save defaults</button>`
+    footer: `<button class="btn ghost" onclick="openMenu()">Back</button><div style="flex:1"></div><button class="btn" onclick="saveSyncSettings()">Save</button>`
   });
+}
+
+function openMortgagePage() {
+  const s = state.settings;
+  showModal({
+    title: 'Mortgage Defaults',
+    onBack: 'openMenu()',
+    body: `<div class="stack">
+      <div class="group-sub">Used by the cashflow calculator for listings with no client context, and as the starting point for each new client. Individual clients can override these in their profile.</div>
+      <div class="row2">
+        <div class="field"><label>Down %</label><input id="s-down" type="number" inputmode="decimal" value="${s.defaultDownPct}"></div>
+        <div class="field"><label>Rate % (annual)</label><input id="s-rate" type="number" step="0.01" inputmode="decimal" value="${s.defaultMortgageRate}"></div>
+      </div>
+      <div class="row2">
+        <div class="field"><label>Amortization (years)</label><input id="s-amort" type="number" inputmode="numeric" value="${s.defaultAmortYears}"></div>
+        <div class="field"><label>Insurance / mo ($)</label><input id="s-ins" type="number" inputmode="numeric" value="${s.defaultInsuranceMonthly}"></div>
+      </div>
+    </div>`,
+    footer: `<button class="btn ghost" onclick="openMenu()">Back</button><div style="flex:1"></div><button class="btn" onclick="saveSettings()">Save</button>`
+  });
+}
+
+function openBackupPage() {
+  showModal({
+    title: 'Backup & Data',
+    onBack: 'openMenu()',
+    body: `<div class="stack">
+      <div class="group-sub">Export a JSON file to back up or move between devices. Import to restore.</div>
+      <div style="display:flex; gap:8px; flex-wrap:wrap">
+        <button class="btn ghost" onclick="exportData()">Export JSON</button>
+        <button class="btn ghost" onclick="document.getElementById('import-file').click()">Import JSON</button>
+        <input id="import-file" type="file" accept="application/json,.json" class="hidden" onchange="importData(this.files[0])">
+      </div>
+      <div class="group" style="margin-top:8px">
+        <h3 style="color:var(--bad)">Danger zone</h3>
+        <div class="group-sub">Erases all clients and listings on this device. Cloud data is untouched unless sync pushes the empty state.</div>
+        <button class="btn ghost danger" onclick="if(confirm('Erase all local data on this device?')){state=structuredClone(DEFAULT_DATA);save();render();toast('Erased'); openBackupPage();}">Erase device data</button>
+      </div>
+    </div>`,
+    footer: `<button class="btn ghost full" onclick="openMenu()">Back</button>`
+  });
+}
+
+function openInstallPage() {
+  showModal({
+    title: 'Install App',
+    onBack: 'openMenu()',
+    body: `<div class="stack">
+      <div class="group">
+        <h3>iPhone / iPad</h3>
+        <div class="group-sub" style="margin:0">Open in Safari → tap Share → <b>Add to Home Screen</b>.</div>
+      </div>
+      <div class="group">
+        <h3>Android</h3>
+        <div class="group-sub" style="margin:0">Open in Chrome → menu (⋮) → <b>Install app</b> / Add to Home screen.</div>
+      </div>
+      <div class="group">
+        <h3>Mac / Windows</h3>
+        <div class="group-sub" style="margin:0">Open in Chrome → click the <b>Install</b> icon in the address bar.</div>
+      </div>
+    </div>`,
+    footer: `<button class="btn ghost full" onclick="openMenu()">Back</button>`
+  });
+}
+
+function openAboutPage() {
+  showModal({
+    title: 'About',
+    onBack: 'openMenu()',
+    body: `<div class="stack">
+      <div style="text-align:center; padding:8px 0">
+        <div style="font-size:28px; font-weight:800; letter-spacing:-0.02em">Showings</div>
+        <div class="muted">Buyer Client Manager · v2</div>
+      </div>
+      <div class="group">
+        <h3>Stats</h3>
+        <div class="group-sub" style="margin:0">${state.clients.length} clients · ${state.listings.length} listings · theme ${THEME_LABEL[loadTheme()]}</div>
+      </div>
+      <div class="group">
+        <h3>Roadmap</h3>
+        <div class="group-sub" style="margin:0; line-height:1.6">CREA DDF auto-feed of new listings (when you have REALTORLink credentials) · listing photos · map view. Just ask.</div>
+      </div>
+    </div>`,
+    footer: `<button class="btn ghost full" onclick="openMenu()">Back</button>`
+  });
+}
+
+function saveAuthSettings() {
+  const cid = $('#s-gcid').value.trim();
+  const emails = $('#s-emails').value.split(/[,\s]+/).map(e => e.trim().toLowerCase()).filter(Boolean);
+  saveAuthCfg({ googleClientId: cid, allowedEmails: emails });
+  toast('Auth settings saved');
+  closeModal();
+  // If auth is now configured AND user isn't signed in, force the gate.
+  if (isAuthEnabled() && !currentSession()) showAuthGate();
 }
 
 function saveSettings() {
@@ -1891,8 +2405,8 @@ async function saveSyncSettings() {
       sync.gistId = gistId;
       saveSyncConfig();
       toast('Gist created — ID saved');
-      // Refresh modal so the gist ID shows
-      openSettings();
+      // Refresh page so the gist ID shows
+      openSyncPage();
     } catch (e) {
       toast('Failed: ' + e.message);
       return;
@@ -1937,10 +2451,11 @@ function importData(file) {
 }
 
 // ---- Modal ------------------------------------------
-function showModal({ title, body, footer }) {
+function showModal({ title, body, footer, onBack }) {
   const m = $('#modal');
   m.innerHTML = `
     <div class="modal-header">
+      ${onBack ? `<button class="icon-btn" onclick="${onBack}" aria-label="Back">‹</button>` : ''}
       <h2>${esc(title)}</h2>
       <button class="icon-btn" onclick="closeModal()" aria-label="Close">✕</button>
     </div>
@@ -1960,11 +2475,23 @@ function onBackdropClick(e) {
 }
 
 // ---- Boot -------------------------------------------
-switchTab('clients');
-setSyncStatus(sync.enabled ? 'live' : null);
-if (sync.enabled && sync.gistId && sync.token) {
-  pullFromGist(true);
+function boot() {
+  applyTheme(loadTheme());
+  if (!isAuthEnabled()) {
+    // No auth configured yet — open app immediately so user can set things up.
+    showAppShell();
+    switchTab('clients');
+    setSyncStatus(sync.enabled ? 'live' : null);
+    if (sync.enabled && sync.gistId && sync.token) pullFromGist(true);
+    return;
+  }
+  if (currentSession()) {
+    onAuthSuccess();
+  } else {
+    showAuthGate();
+  }
 }
+boot();
 // ESC to close modal
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeModal(); });
 
