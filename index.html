@@ -540,6 +540,34 @@
   .menu-row .m-sub { color: var(--muted); font-size: 13px; margin-top: 1px; }
   .menu-row .m-chevron { color: var(--muted); font-size: 18px; }
   .menu-row .seg { flex-shrink: 0; }
+
+  /* Notes & AI */
+  .note-entry { padding: 8px 0; border-bottom: 1px solid var(--border); display: flex; gap: 8px; }
+  .note-entry .ne-body { flex: 1; min-width: 0; }
+  .note-entry .ne-date { font-size: 11px; color: var(--muted); font-weight: 600; }
+  .note-entry .ne-text { font-size: 14px; line-height: 1.45; margin-top: 1px; white-space: pre-wrap; word-break: break-word; }
+  .note-entry .ne-del { color: var(--muted); font-size: 16px; align-self: flex-start; padding: 2px 4px; }
+  .note-entry .ne-del:hover { color: var(--bad); }
+  .note-add { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
+  .note-add textarea { min-height: 60px; }
+  .summary-box {
+    background: var(--bg-soft); border: 1px solid var(--border);
+    border-radius: 12px; padding: 14px; margin-top: 12px;
+  }
+  .summary-box .sb-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 8px; }
+  .summary-box .sb-title { font-weight: 800; font-size: 13px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-soft); }
+  .summary-box .sb-body { font-size: 14px; line-height: 1.55; }
+  .summary-box .sb-body b { font-weight: 700; }
+  .summary-box .sb-meta { font-size: 11px; color: var(--muted); margin-top: 8px; }
+  .gen-btn-busy { opacity: 0.6; pointer-events: none; }
+  .screen-card { border: 1px solid var(--border); border-radius: 12px; padding: 12px; margin-bottom: 10px; }
+  .screen-card .sc-head { display: flex; align-items: center; gap: 10px; }
+  .screen-card .sc-head .addr { flex: 1; min-width: 0; font-weight: 700; }
+  .screen-result { margin-top: 10px; font-size: 14px; line-height: 1.5; }
+  .fit-badge { padding: 2px 10px; border-radius: 999px; font-size: 12px; font-weight: 700; }
+  .fit-strong { background: rgba(0,186,124,.12); color: var(--good); }
+  .fit-moderate { background: rgba(255,158,28,.12); color: var(--warn); }
+  .fit-weak { background: rgba(244,33,46,.12); color: var(--bad); }
 </style>
 </head>
 <body>
@@ -607,6 +635,8 @@ const SYNC_KEY = 'showings_sync_v1';
 const DEFAULT_DATA = {
   clients: [],
   listings: [],
+  // Shared, entity-keyed notes + AI summaries. Mapped to listings by matching value.
+  entities: { neighbourhood: {}, community: {}, building: {}, city: {}, developer: {} },
   settings: {
     defaultDownPct: 20,
     defaultMortgageRate: 5.0,
@@ -649,6 +679,8 @@ function loadData() {
     if (!d.clients) d.clients = [];
     if (!d.listings) d.listings = [];
     if (!d.settings) d.settings = structuredClone(DEFAULT_DATA.settings);
+    if (!d.entities) d.entities = { neighbourhood:{}, community:{}, building:{}, city:{}, developer:{} };
+    ['neighbourhood','community','building','city','developer'].forEach(k => { if (!d.entities[k]) d.entities[k] = {}; });
     return d;
   } catch (e) {
     console.error('load failed', e);
@@ -1190,6 +1222,172 @@ function bypassAuthForSetup() {
   toast('Configure Account & Security, then reload.');
 }
 
+// ---- Claude API ------------------------------------
+const CLAUDE_CFG_KEY = 'showings_claude_v1';
+const CLAUDE_MODELS = {
+  'claude-haiku-4-5-20251001': 'Haiku (fast & cheap)',
+  'claude-sonnet-4-6': 'Sonnet (balanced)',
+  'claude-opus-4-6': 'Opus (highest quality)',
+};
+function loadClaudeCfg() {
+  try {
+    const raw = localStorage.getItem(CLAUDE_CFG_KEY);
+    const d = raw ? JSON.parse(raw) : {};
+    return { apiKey: d.apiKey || '', model: d.model || 'claude-haiku-4-5-20251001' };
+  } catch { return { apiKey: '', model: 'claude-haiku-4-5-20251001' }; }
+}
+function saveClaudeCfg(c) { localStorage.setItem(CLAUDE_CFG_KEY, JSON.stringify(c)); }
+function hasClaudeKey() { return !!loadClaudeCfg().apiKey; }
+
+async function callClaude(system, user, opts={}) {
+  const cfg = loadClaudeCfg();
+  if (!cfg.apiKey) throw new Error('Add your Anthropic API key in Menu → Claude API');
+  const res = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      'x-api-key': cfg.apiKey,
+      'anthropic-version': '2023-06-01',
+      'anthropic-dangerous-direct-browser-access': 'true',
+    },
+    body: JSON.stringify({
+      model: opts.model || cfg.model,
+      max_tokens: opts.maxTokens || 1200,
+      system,
+      messages: [{ role: 'user', content: user }],
+    }),
+  });
+  if (!res.ok) {
+    let msg = 'API error ' + res.status;
+    try { const e = await res.json(); msg = e.error?.message || msg; } catch {}
+    throw new Error(msg);
+  }
+  const data = await res.json();
+  return (data.content || []).map(b => b.text || '').join('').trim();
+}
+
+// ---- Prompt builders -------------------------------
+const SUMMARY_SYS = 'You are an assistant to a Canadian real estate agent. You write concise, structured, factual summaries from the agent\'s field notes. Use short markdown-style headers and bullet points. Do not invent facts not present in the notes. If information is missing, say "Not yet known".';
+
+function notesToText(notes) {
+  return (notes || []).map(n => `[${(n.date||'').slice(0,10)}] ${n.text}`).join('\n');
+}
+
+function buildPersonaPrompt(client) {
+  const notes = notesToText(client.personaNotes);
+  const user = `These are chronological notes a real estate agent took after communicating with a client named "${client.name}". Produce a structured summary covering:\n\n1. Life stage & situation\n2. Are they looking to BUY or SELL (or both)?\n3. Their criteria / preferences (location, budget, size, property type, cashflow, etc.)\n4. Motivations and timeline\n5. Personality / communication style & anything notable for the agent to remember\n\nNotes:\n${notes || '(no notes yet)'}`;
+  return { system: SUMMARY_SYS, user };
+}
+
+function buildPropertyPrompt(listing) {
+  const notes = notesToText(listing.propertyNotes);
+  const rawBlock = listing.rawPaste ? `\n\nORIGINAL LISTING TEXT (source material — treat as factual):\n${listing.rawPaste}` : '';
+  const user = `Notes about a specific listing at "${listing.address || 'this property'}" (${[listing.city, listing.propertyType].filter(Boolean).join(', ')}). Produce a structured summary covering:\n\n1. Property situation & condition\n2. Transaction history (prior sales, days on market, price changes)\n3. Seller's life stage & motivation\n4. Seller's expectations on price and closing date\n5. Negotiation angles / anything notable\n\nAgent notes:\n${notes || '(no notes yet)'}${rawBlock}`;
+  return { system: SUMMARY_SYS, user };
+}
+
+const ENTITY_LABEL = { neighbourhood: 'neighbourhood', community: 'community', city: 'city / market', developer: 'developer / builder' };
+function buildEntityPrompt(type, key, notes) {
+  const label = ENTITY_LABEL[type] || type;
+  const focus = {
+    neighbourhood: 'amenities, transit, schools, walkability, safety, vibe, price trends, pros/cons for a buyer',
+    community: 'the building/community: management, amenities, fees, demographics, rules, reputation, resale dynamics',
+    city: 'the city/market: overall market conditions, demand, price trends, development outlook, buyer considerations',
+    developer: 'the developer/builder: reputation, build quality, track record, notable projects, things buyers should watch for',
+  }[type] || 'key facts a buyer should know';
+  const user = `Notes about the ${label} "${key}". Produce a structured summary focusing on ${focus}. Notes:\n${notesToText(notes) || '(no notes yet)'}`;
+  return { system: SUMMARY_SYS, user };
+}
+
+function buildExtractionPrompt(raw) {
+  const system = 'You extract structured real-estate listing data from pasted text. Respond with ONLY a JSON object — no prose, no markdown, no backticks.';
+  const user = `Extract these fields from the listing text below. Use null when a field is not present. Numbers must be plain integers (no $, no commas). Return ONLY this JSON shape:
+{"address":"","city":"","neighbourhood":"","community":"","building":"","propertyType":"","price":null,"beds":null,"baths":null,"sizeSqft":null,"maintenanceFee":null,"propertyTax":null,"estRentalIncome":null,"mlsNumber":"","builder":"","parkingSpaces":null,"lockers":null}
+
+Guidance:
+- propertyType: best match of Detached, Semi-Detached, Townhouse, Condo, Condo Townhouse, Multi-Plex.
+- propertyTax: ANNUAL amount.
+- maintenanceFee: MONTHLY condo/maintenance fee.
+- "community" = broader development/community name; "building" = the specific building/condo name; "builder" = the developer company.
+- beds: if listed like "3+1", return the total (4).
+- lockers: integer count (0 if "none").
+
+Listing text:
+${raw}`;
+  return { system, user };
+}
+function parseExtraction(text) {
+  let t = (text || '').trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '');
+  const m = t.match(/\{[\s\S]*\}/);
+  if (!m) throw new Error('No JSON found in response');
+  return JSON.parse(m[0]);
+}
+
+const SCREEN_SYS = 'You are a Canadian buyer\'s real estate agent assistant. You assess how well a specific listing fits a specific buyer client, using all available structured data and the agent\'s summarized intelligence. Be decisive and practical. Respond with ONLY a JSON object, no prose around it.';
+
+function buildScreeningPrompt(client, listing) {
+  const cr = client.criteria || {};
+  const ent = (type, key) => {
+    const b = key && state.entities?.[type]?.[key];
+    return b && b.summary ? b.summary.text : (b && b.notes?.length ? notesToText(b.notes) : '');
+  };
+  const clientBlock = [
+    `Name: ${client.name}`,
+    cr.locations?.length ? `Wants locations: ${cr.locations.join(', ')}` : '',
+    cr.propertyTypes?.length ? `Property types: ${cr.propertyTypes.join(', ')}` : '',
+    (cr.budgetMin||cr.budgetMax) ? `Budget: ${cr.budgetMin?fmt$(cr.budgetMin):'—'} to ${cr.budgetMax?fmt$(cr.budgetMax):'—'}` : '',
+    cr.bedsMin ? `Min beds: ${cr.bedsMin}` : '',
+    cr.bathsMin ? `Min baths: ${cr.bathsMin}` : '',
+    cr.sizeMin ? `Min size: ${cr.sizeMin} sqft` : '',
+    cr.cashflowRequired ? `Requires cashflow >= ${fmt$(cr.cashflowMin||0)}/mo ${cr.cashflowWithRental?'(with rental income)':'(without rental)'}` : '',
+    cr.specialRequirements ? `Special requirements: ${cr.specialRequirements}` : '',
+    client.personaSummary ? `\nPERSONA SUMMARY:\n${client.personaSummary.text}` : (client.personaNotes?.length ? `\nPERSONA NOTES:\n${notesToText(client.personaNotes)}` : ''),
+  ].filter(Boolean).join('\n');
+
+  const cf = computeCashflow(listing, { withRental: true, client });
+  const cfNo = computeCashflow(listing, { withRental: false, client });
+  const listingBlock = [
+    `Address: ${listing.address || '—'}`,
+    `City: ${listing.city || '—'}`,
+    listing.neighbourhood ? `Neighbourhood: ${listing.neighbourhood}` : '',
+    listing.community ? `Community: ${listing.community}` : '',
+    listing.building ? `Building: ${listing.building}` : '',
+    listing.builder ? `Developer: ${listing.builder}` : '',
+    `Type: ${listing.propertyType || '—'}`,
+    `Price: ${fmt$(listing.price)}`,
+    `Beds/Baths: ${listing.beds||'—'}/${listing.baths||'—'}`,
+    listing.sizeSqft ? `Size: ${listing.sizeSqft} sqft (${fmt$psf(pricePsf(listing))})` : '',
+    `Maintenance: ${fmt$(listing.maintenanceFee)}/mo, Tax: ${fmt$(listing.propertyTax)}/yr`,
+    listing.estRentalIncome ? `Est. rent: ${fmt$(listing.estRentalIncome)}/mo` : '',
+    `Est. cashflow: ${fmtMoneySigned(cf.netMonthly)}/mo with rent, ${fmtMoneySigned(cfNo.netMonthly)}/mo without`,
+    listing.propertySummary ? `\nPROPERTY INTEL:\n${listing.propertySummary.text}` : '',
+    ent('neighbourhood', listing.neighbourhood) ? `\nNEIGHBOURHOOD INTEL:\n${ent('neighbourhood', listing.neighbourhood)}` : '',
+    ent('community', listing.community) ? `\nCOMMUNITY INTEL:\n${ent('community', listing.community)}` : '',
+    ent('building', listing.building) ? `\nBUILDING INTEL:\n${ent('building', listing.building)}` : '',
+    ent('city', listing.city) ? `\nCITY/MARKET INTEL:\n${ent('city', listing.city)}` : '',
+    ent('developer', listing.builder) ? `\nDEVELOPER INTEL:\n${ent('developer', listing.builder)}` : '',
+  ].filter(Boolean).join('\n');
+
+  const user = `Assess how well this LISTING fits this CLIENT.\n\n=== CLIENT ===\n${clientBlock}\n\n=== LISTING ===\n${listingBlock}\n\nReturn ONLY this JSON (no markdown, no backticks):\n{"score": <integer 0-100>, "fit": "<strong|moderate|weak>", "analysis": "<3-6 sentence practical analysis: why it fits or not, key strengths, key concerns, and a recommendation>"}`;
+  return { system: SCREEN_SYS, user };
+}
+
+function parseScreeningResponse(text) {
+  if (!text) throw new Error('Empty response');
+  let t = text.trim();
+  // Strip code fences if present
+  t = t.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '');
+  // Find the first {...} block
+  const m = t.match(/\{[\s\S]*\}/);
+  if (!m) throw new Error('No JSON found in response');
+  const obj = JSON.parse(m[0]);
+  let score = parseInt(obj.score, 10);
+  if (isNaN(score)) score = null;
+  if (score != null) score = Math.max(0, Math.min(100, score));
+  const fit = ['strong','moderate','weak'].includes((obj.fit||'').toLowerCase()) ? obj.fit.toLowerCase() : 'moderate';
+  return { score, fit, analysis: String(obj.analysis || '').trim() };
+}
+
 // ---- Routing / tabs --------------------------------
 function switchTab(t) {
   currentTab = t;
@@ -1434,6 +1632,8 @@ function openClient(id) {
         <h3>Buying criteria</h3>
         <div style="line-height:1.7;">${criteriaDetail(c)}</div>
       </div>
+      <button class="btn ghost full" onclick="openClientIntel('${c.id}')">🧠 Persona &amp; AI screening</button>
+      ${c.personaSummary ? `<div class="summary-box"><div class="sb-head"><span class="sb-title">Persona (AI)</span></div><div class="sb-body">${mdLite(c.personaSummary.text)}</div></div>` : ''}
       <div>
         <h3 style="margin:0 0 8px; font-size:15px">Matches (≥ ${t}%) — ${above.length}</h3>
         ${above.map(x => listingMiniRow(x.l, x.m.score, c.id, t)).join('') || '<div class="muted">No listings above threshold yet.</div>'}
@@ -1647,12 +1847,13 @@ function editListing(id) {
   const isNew = !id;
   const l = id ? structuredClone(state.listings.find(x=>x.id===id)) : {
     id: uid(), realmasterUrl:'',
-    address:'', city:'', propertyType:'Condo',
+    address:'', city:'', neighbourhood:'', community:'', building:'', propertyType:'Condo',
     price:null, beds:null, baths:null, sizeSqft:null,
     maintenanceFee:0, propertyTax:0, estRentalIncome:0,
     quickBrief:'', status:'to_show',
     mlsNumber:'', builder:'',
     parkingSpaces:null, lockers:null,
+    rawPaste:'',
     assignedClientIds:[], showings:[],
     createdAt: new Date().toISOString(),
   };
@@ -1679,6 +1880,14 @@ function editListing(id) {
         </div>
       </div>
       <div class="row2">
+        <div class="field"><label>Neighbourhood</label><input id="f-lnbhd" value="${esc(l.neighbourhood||'')}" placeholder="e.g. Yonge & Eglinton"></div>
+        <div class="field"><label>Community / development</label><input id="f-lcomm" value="${esc(l.community||'')}" placeholder="e.g. CityPlace"></div>
+      </div>
+      <div class="row2">
+        <div class="field"><label>Building</label><input id="f-lbuild" value="${esc(l.building||'')}" placeholder="e.g. Aura at College Park"></div>
+        <div class="field"><label>Builder / developer</label><input id="f-lbuilder" value="${esc(l.builder||'')}" placeholder="e.g. Tridel"></div>
+      </div>
+      <div class="row2">
         <div class="field"><label>Price</label><input id="f-lprice" type="number" inputmode="numeric" value="${l.price??''}" placeholder="$" oninput="updateCashflowPreview()"></div>
         <div class="field"><label>Size (sqft)</label><input id="f-lsize" type="number" inputmode="numeric" value="${l.sizeSqft??''}" oninput="updateCashflowPreview()"></div>
       </div>
@@ -1694,14 +1903,17 @@ function editListing(id) {
 
       <div class="row2">
         <div class="field"><label>MLS#</label><input id="f-lmls" value="${esc(l.mlsNumber||'')}" placeholder="C1234567"></div>
-        <div class="field"><label>Builder / developer</label><input id="f-lbuilder" value="${esc(l.builder||'')}" placeholder="e.g. Tridel"></div>
-      </div>
-      <div class="row2">
         <div class="field"><label>Parking spaces</label><input id="f-lparking" type="number" inputmode="numeric" min="0" max="20" value="${l.parkingSpaces ?? ''}" placeholder="0"></div>
-        <div class="field"><label>Lockers</label><input id="f-llocker" type="number" inputmode="numeric" min="0" max="10" value="${l.lockers ?? ''}" placeholder="0 = none, 1+ = count"></div>
       </div>
+      <div class="field"><label>Lockers</label><input id="f-llocker" type="number" inputmode="numeric" min="0" max="10" value="${l.lockers ?? ''}" placeholder="0 = none, 1+ = count"></div>
 
       <div class="field"><label>Quick brief</label><textarea id="f-lbrief" placeholder="A few lines for at-a-glance during showings…">${esc(l.quickBrief||'')}</textarea></div>
+
+      <details ${l.rawPaste?'open':''} style="padding:12px 14px">
+        <summary>Original pasted listing info${l.rawPaste?' ✓':''}</summary>
+        <div class="muted smaller" style="margin:8px 0">Saved verbatim for future reference. Smart Paste fills this automatically; you can also paste/edit here.</div>
+        <textarea id="f-lraw" rows="6" placeholder="The full listing text you pasted…">${esc(l.rawPaste||'')}</textarea>
+      </details>
 
       <div class="field"><label>Status</label>
         <div class="seg" id="f-lstatus-seg">
@@ -1778,6 +1990,9 @@ function saveListingForm(id, isNew) {
   const l = {
     id, realmasterUrl: $('#f-url').value.trim(),
     address, city: $('#f-lcity').value.trim(),
+    neighbourhood: $('#f-lnbhd').value.trim(),
+    community: $('#f-lcomm').value.trim(),
+    building: $('#f-lbuild').value.trim(),
     propertyType: $('#f-ltype').value,
     price: numOrNull($('#f-lprice').value),
     beds: numOrNull($('#f-lbeds').value),
@@ -1787,6 +2002,7 @@ function saveListingForm(id, isNew) {
     propertyTax: numOrNull($('#f-ltax').value) || 0,
     estRentalIncome: numOrNull($('#f-lrent').value) || 0,
     quickBrief: $('#f-lbrief').value.trim(),
+    rawPaste: $('#f-lraw') ? $('#f-lraw').value : (existing?.rawPaste || ''),
     mlsNumber: $('#f-lmls').value.trim(),
     builder: $('#f-lbuilder').value.trim(),
     parkingSpaces: numOrNull($('#f-lparking').value),
@@ -1821,6 +2037,9 @@ function openSmartPaste(listingId) {
     url: $('#f-url')?.value || '',
     addr: $('#f-laddr')?.value || '',
     city: $('#f-lcity')?.value || '',
+    nbhd: $('#f-lnbhd')?.value || '',
+    comm: $('#f-lcomm')?.value || '',
+    build: $('#f-lbuild')?.value || '',
     type: $('#f-ltype')?.value || '',
     price: $('#f-lprice')?.value || '',
     beds: $('#f-lbeds')?.value || '',
@@ -1834,6 +2053,7 @@ function openSmartPaste(listingId) {
     builder: $('#f-lbuilder')?.value || '',
     parking: $('#f-lparking')?.value || '',
     locker: $('#f-llocker')?.value || '',
+    raw: $('#f-lraw')?.value || '',
     status: document.querySelector('#f-lstatus-seg button.on')?.dataset.status || 'to_show',
   };
   const assigned = Array.from(document.querySelectorAll('[data-cid]')).filter(cb=>cb.checked).map(cb=>cb.dataset.cid);
@@ -1844,7 +2064,7 @@ function openSmartPaste(listingId) {
     showModal({
       title: 'Smart Paste',
       body: `<div class="stack">
-        <div class="muted smaller">Open any listing in your browser / app → Select All → Copy → paste below. We'll pull out price, beds, baths, sqft, address, type. Edit anything wrong on the next screen.</div>
+        <div class="muted smaller">Open any listing in your browser / app → Select All → Copy → paste below. <b>Parse with AI</b> reads it most accurately (needs your Claude key); <b>Quick parse</b> uses fast offline pattern-matching. Edit anything wrong on the next screen.</div>
         <div class="field">
           <label>Listing URL (optional)</label>
           <input id="sp-url" type="url" value="${esc(cur.url)}" placeholder="https://…">
@@ -1858,7 +2078,8 @@ function openSmartPaste(listingId) {
       footer: `
         <button class="btn ghost" onclick="closeModal(); reopenListingEdit()">Cancel</button>
         <div style="flex:1"></div>
-        <button class="btn" onclick="applySmartPaste()">Parse & Fill</button>
+        <button class="btn ghost" onclick="applySmartPaste()">Quick parse</button>
+        <button class="btn" id="sp-ai-btn" onclick="applyAISmartPaste()">✦ Parse with AI</button>
       `
     });
     $('#sp-text').addEventListener('input', updateSmartPastePreview);
@@ -1877,6 +2098,9 @@ function reopenListingEdit() {
     set('#f-url', stash.cur.url);
     set('#f-laddr', stash.cur.addr);
     set('#f-lcity', stash.cur.city);
+    set('#f-lnbhd', stash.cur.nbhd);
+    set('#f-lcomm', stash.cur.comm);
+    set('#f-lbuild', stash.cur.build);
     set('#f-ltype', stash.cur.type);
     set('#f-lprice', stash.cur.price);
     set('#f-lbeds', stash.cur.beds);
@@ -1890,6 +2114,7 @@ function reopenListingEdit() {
     set('#f-lbuilder', stash.cur.builder);
     set('#f-lparking', stash.cur.parking);
     set('#f-llocker', stash.cur.locker);
+    set('#f-lraw', stash.cur.raw);
     if (stash.cur.status) {
       document.querySelectorAll('#f-lstatus-seg button').forEach(b=>b.classList.toggle('on', b.dataset.status===stash.cur.status));
     }
@@ -2079,10 +2304,46 @@ function applySmartPaste() {
   if (parsed.builder) c.builder = parsed.builder;
   if (parsed.parkingSpaces != null) c.parking = String(parsed.parkingSpaces);
   if (parsed.lockers != null) c.locker = String(parsed.lockers);
+  if (text.trim()) c.raw = text;  // keep the original pasted source for future reference
   window._editStash = stash;
   closeModal();
   setTimeout(reopenListingEdit, 60);
   toast('Fields filled — review and save');
+}
+
+async function applyAISmartPaste() {
+  const text = $('#sp-text')?.value || '';
+  const url = $('#sp-url')?.value || '';
+  if (!text.trim()) { toast('Paste listing text first'); return; }
+  if (!hasClaudeKey()) { toast('Add your Claude API key in Menu → Claude API'); return; }
+  const btn = $('#sp-ai-btn');
+  if (btn) { btn.textContent = 'Parsing…'; btn.classList.add('gen-btn-busy'); }
+  try {
+    const { system, user } = buildExtractionPrompt(text);
+    const out = await callClaude(system, user, { maxTokens: 800 });
+    const p = parseExtraction(out);
+    const stash = window._editStash || { listingId:null, cur:{}, assigned:[] };
+    const c = stash.cur;
+    const setIf = (k, v) => { if (v !== null && v !== undefined && String(v).trim() !== '') c[k] = String(v).trim(); };
+    if (url.trim()) c.url = url.trim();
+    else { const um = text.match(/https?:\/\/[^\s)>"']+/); if (um) c.url = um[0]; }
+    setIf('addr', p.address); setIf('city', p.city);
+    setIf('nbhd', p.neighbourhood); setIf('comm', p.community); setIf('build', p.building);
+    setIf('type', p.propertyType);
+    setIf('price', p.price); setIf('beds', p.beds); setIf('baths', p.baths); setIf('size', p.sizeSqft);
+    setIf('maint', p.maintenanceFee); setIf('tax', p.propertyTax); setIf('rent', p.estRentalIncome);
+    setIf('mls', p.mlsNumber); setIf('builder', p.builder);
+    if (p.parkingSpaces !== null && p.parkingSpaces !== undefined) c.parking = String(p.parkingSpaces);
+    if (p.lockers !== null && p.lockers !== undefined) c.locker = String(p.lockers);
+    c.raw = text;
+    window._editStash = stash;
+    closeModal();
+    setTimeout(reopenListingEdit, 60);
+    toast('AI-parsed — review and save');
+  } catch (e) {
+    toast('AI parse failed: ' + e.message);
+    if (btn) { btn.textContent = '✦ Parse with AI'; btn.classList.remove('gen-btn-busy'); }
+  }
 }
 
 // ---- Quick brief ------------------------------------
@@ -2117,6 +2378,8 @@ function briefListing(id, clientId) {
         <div class="stat"><div class="lbl">CF w/ rent</div><div class="val" style="color:${cfYes.netMonthly>=0?'var(--good)':'var(--bad)'}">${fmtMoneySigned(cfYes.netMonthly)}</div></div>
       </div>
       ${l.quickBrief ? `<div class="talking"><b>Talking points</b><br>${esc(l.quickBrief)}</div>` : ''}
+      ${l.propertySummary ? `<div class="summary-box"><div class="sb-head"><span class="sb-title">Property intel (AI)</span></div><div class="sb-body">${mdLite(l.propertySummary.text)}</div></div>` : ''}
+      <div style="margin-top:14px"><button class="btn ghost full" onclick="openListingIntel('${l.id}')">📝 Notes &amp; AI summaries</button></div>
       ${l.realmasterUrl ? `<div class="url-block"><a href="${esc(l.realmasterUrl)}" target="_blank" rel="noopener">${esc(l.realmasterUrl)}</a></div>` : ''}
     </div>`,
     footer: `
@@ -2126,6 +2389,209 @@ function briefListing(id, clientId) {
       <button class="btn ghost" onclick="toggleCompare('${l.id}'); closeModal()">${inCompare?'✓ In Compare':'+ Compare'}</button>
       ${l.realmasterUrl ? `<button class="btn" onclick="shareListing('${l.id}', event)">Share</button>` : ''}
     `
+  });
+}
+
+// ---- Client intel (persona + screening) ------------
+function openClientIntel(clientId) {
+  const c = state.clients.find(x => x.id === clientId);
+  if (!c) return;
+  _notesCtx = { persona: { kind:'client', clientId: c.id, _title:'Persona notes' } };
+  const assigned = state.listings.filter(l => (l.assignedClientIds||[]).includes(c.id));
+  const screeningSection = `<div class="group">
+    <h3>Listing screening (AI)</h3>
+    <div class="group-sub">Screen runs everything known about ${esc(c.name)} (criteria, persona summary) against everything known about each listing (property + neighbourhood + community + city + developer intel) to produce a fit verdict, score, and analysis.</div>
+    ${assigned.length ? assigned.map(l => renderScreenCard(c, l)).join('') : '<div class="muted smaller">No listings assigned to this client yet. Open a listing → Edit → tick this client under "Assigned clients".</div>'}
+  </div>`;
+  showModal({
+    title: 'Persona & Screening',
+    onBack: `openClient('${c.id}')`,
+    body: `<div class="stack">
+      <div class="group-sub">${esc(c.name)} — add a persona note each time you talk, then generate a structured summary of their life stage and what they want.</div>
+      ${notesSectionHtml('persona', 'Persona notes')}
+      ${screeningSection}
+    </div>`,
+    footer: `<button class="btn ghost full" onclick="openClient('${c.id}')">Back</button>`
+  });
+}
+
+let _screenBusy = {};
+function renderScreenCard(c, l) {
+  const result = (c.screenings || {})[l.id];
+  const busy = _screenBusy[c.id + ':' + l.id];
+  const t = c.criteria?.matchThreshold || 70;
+  return `<div class="screen-card" id="screen-${l.id}">
+    <div class="sc-head">
+      <div class="addr">${esc(l.address || 'Untitled')}</div>
+      ${result && result.score!=null ? `<div class="score ${scoreClass(result.score, t)}">${result.score}%</div>` : ''}
+      <button class="btn ghost small ${busy?'gen-btn-busy':''}" onclick="screenListing('${c.id}','${l.id}')">${busy ? 'Screening…' : (result ? 'Re-screen' : '✦ Screen')}</button>
+    </div>
+    ${result ? `<div class="screen-result">
+      <span class="fit-badge fit-${result.fit}">${result.fit} fit</span>
+      <div style="margin-top:6px">${mdLite(result.analysis)}</div>
+      <div class="muted smaller" style="margin-top:6px">Screened ${new Date(result.generatedAt).toLocaleString()}</div>
+    </div>` : ''}
+  </div>`;
+}
+function refreshScreenCard(c, l) {
+  const el = $('#screen-' + l.id);
+  if (el) el.outerHTML = renderScreenCard(c, l);
+}
+async function screenListing(clientId, listingId) {
+  if (!hasClaudeKey()) { toast('Add your Claude API key in Menu → Claude API'); return; }
+  const c = state.clients.find(x => x.id === clientId);
+  const l = state.listings.find(x => x.id === listingId);
+  if (!c || !l) return;
+  const bkey = clientId + ':' + listingId;
+  _screenBusy[bkey] = true; refreshScreenCard(c, l);
+  try {
+    const { system, user } = buildScreeningPrompt(c, l);
+    const text = await callClaude(system, user, { maxTokens: 700 });
+    const parsed = parseScreeningResponse(text);
+    if (!c.screenings) c.screenings = {};
+    c.screenings[listingId] = { ...parsed, generatedAt: new Date().toISOString() };
+    save();
+  } catch (e) {
+    toast('Screening failed: ' + e.message);
+  } finally {
+    _screenBusy[bkey] = false;
+    refreshScreenCard(c, l);
+  }
+}
+
+// ---- Entities (areas & intel) ----------------------
+const ENTITY_TYPES = ['neighbourhood','community','building','city','developer'];
+const ENTITY_TYPE_LABEL = { neighbourhood:'Neighbourhood', community:'Community', building:'Building', city:'City / market', developer:'Developer' };
+const ENTITY_TYPE_PLURAL = { neighbourhood:'Neighbourhoods', community:'Communities', building:'Buildings', city:'Cities', developer:'Developers' };
+function entityValueOf(l, type) {
+  if (type === 'neighbourhood') return l.neighbourhood || '';
+  if (type === 'community') return l.community || '';
+  if (type === 'building') return l.building || '';
+  if (type === 'city') return l.city || '';
+  if (type === 'developer') return l.builder || '';
+  return '';
+}
+function distinctEntityKeys(type) {
+  const set = new Set();
+  state.listings.forEach(l => { const v = entityValueOf(l, type).trim(); if (v) set.add(v); });
+  Object.keys(state.entities[type] || {}).forEach(k => set.add(k));
+  return [...set].sort((a,b)=>a.localeCompare(b));
+}
+function setListingEntity(listingId, type, inputId) {
+  const v = ($('#' + inputId)?.value || '').trim();
+  if (!v) { toast('Enter a name'); return; }
+  const l = state.listings.find(x => x.id === listingId);
+  if (!l) return;
+  if (type === 'neighbourhood') l.neighbourhood = v;
+  else if (type === 'community') l.community = v;
+  else if (type === 'building') l.building = v;
+  else if (type === 'city') l.city = v;
+  else if (type === 'developer') l.builder = v;
+  save();
+  openListingIntel(listingId);
+}
+
+function openEntityBrowser(focusType) {
+  const types = ENTITY_TYPES;
+  const groups = types.map(type => {
+    const keys = distinctEntityKeys(type);
+    const rows = keys.length ? keys.map(k => {
+      const b = state.entities[type]?.[k];
+      const noteCount = b?.notes?.length || 0;
+      const hasSummary = !!b?.summary;
+      const usedBy = state.listings.filter(l => entityValueOf(l, type) === k).length;
+      return `<div class="menu-row" onclick="openEntityPage('${type}', ${JSON.stringify(k).replace(/"/g,'&quot;')})">
+        <div class="m-icon"></div>
+        <div class="m-body"><div class="m-title">${esc(k)}</div><div class="m-sub">${usedBy} listing${usedBy===1?'':'s'}${noteCount?` · ${noteCount} note${noteCount===1?'':'s'}`:''}${hasSummary?' · ✓ summary':''}</div></div>
+        <div class="m-chevron">›</div>
+      </div>`;
+    }).join('') : `<div class="muted smaller" style="padding:10px 0">None yet — set ${ENTITY_TYPE_LABEL[type].toLowerCase()} on a listing, or add one below.</div>`;
+    return `<details class="group" style="padding:0" ${focusType===type?'open':''}>
+      <summary style="padding:14px">${ENTITY_TYPE_PLURAL[type]} (${keys.length})</summary>
+      <div style="padding:0 14px 14px">
+        <div class="menu-list" style="margin:0 -14px 8px">${rows}</div>
+        <div style="display:flex; gap:8px">
+          <input id="newent-${type}" placeholder="Add ${ENTITY_TYPE_LABEL[type].toLowerCase()}…">
+          <button class="btn small" onclick="addEntityKey('${type}','newent-${type}')">Add</button>
+        </div>
+      </div>
+    </details>`;
+  }).join('');
+  showModal({
+    title: 'Areas & Intel',
+    onBack: 'openMenu()',
+    body: `<div class="stack">
+      <div class="group-sub">Notes & AI summaries for neighbourhoods, communities, buildings, cities and developers — shared across every listing with the same value. Edit them here at a high level, or from any listing's Notes & AI screen.</div>
+      ${groups}
+    </div>`,
+    footer: `<button class="btn ghost full" onclick="openMenu()">Back</button>`
+  });
+}
+function addEntityKey(type, inputId) {
+  const v = ($('#' + inputId)?.value || '').trim();
+  if (!v) { toast('Enter a name'); return; }
+  if (!state.entities[type]) state.entities[type] = {};
+  if (!state.entities[type][v]) state.entities[type][v] = { notes: [], summary: null };
+  save();
+  openEntityPage(type, v);
+}
+function openEntityPage(type, key) {
+  _notesCtx = { entity: { kind:'entity', entityType:type, entityKey:key, _title: ENTITY_TYPE_LABEL[type] + ' notes' } };
+  const usedBy = state.listings.filter(l => entityValueOf(l, type) === key);
+  showModal({
+    title: key,
+    onBack: `openEntityBrowser('${type}')`,
+    body: `<div class="stack">
+      <div class="group-sub">${ENTITY_TYPE_LABEL[type]} · shared by ${usedBy.length} listing${usedBy.length===1?'':'s'}</div>
+      ${notesSectionHtml('entity', ENTITY_TYPE_LABEL[type] + ' notes')}
+      ${usedBy.length ? `<div class="group"><h3>Listings here</h3>${usedBy.map(l => `<div class="feed-item" style="margin:0 -14px; padding:10px 14px" onclick="closeModal(); setTimeout(()=>briefListing('${l.id}'),60)"><div class="body"><h3 style="font-size:14px">${esc(l.address||'Untitled')}</h3><div class="muted smaller">${fmt$short(l.price)} · ${esc(l.city||'')}</div></div></div>`).join('')}</div>` : ''}
+    </div>`,
+    footer: `<button class="btn ghost full" onclick="openEntityBrowser('${type}')">Back</button>`
+  });
+}
+
+// ---- Listing intel (notes + AI) --------------------
+function openListingIntel(listingId) {
+  const l = state.listings.find(x => x.id === listingId);
+  if (!l) return;
+  _notesCtx = { property: { kind:'listing', listingId: l.id, _title:'Property notes' } };
+  const sections = [ notesSectionHtml('property', 'Property notes') ];
+  const entityDefs = [
+    ['neighbourhood', l.neighbourhood, 'Neighbourhood'],
+    ['community', l.community, 'Community'],
+    ['building', l.building, 'Building'],
+    ['city', l.city, 'City / market'],
+    ['developer', l.builder, 'Developer'],
+  ];
+  entityDefs.forEach(([type, val, title]) => {
+    if (val) {
+      _notesCtx[type] = { kind:'entity', entityType:type, entityKey:val, _title: title + ' — ' + val };
+      sections.push(notesSectionHtml(type, title + ' — ' + esc(val)));
+    } else {
+      sections.push(`<div class="group"><h3>${title}</h3>
+        <div class="muted smaller" style="margin-bottom:8px">No ${title.toLowerCase()} set for this listing. Add one to start notes (shared across listings with the same value).</div>
+        <div style="display:flex; gap:8px">
+          <input id="setent-${type}" placeholder="${title} name">
+          <button class="btn small" onclick="setListingEntity('${l.id}','${type}','setent-${type}')">Set</button>
+        </div></div>`);
+    }
+  });
+  const rawSection = l.rawPaste ? `<details class="group" style="padding:0">
+    <summary style="padding:14px">Original pasted listing info</summary>
+    <div style="padding:0 14px 14px">
+      <div class="muted smaller" style="margin-bottom:8px">Saved verbatim when this listing was created. Used as source material for the property summary.</div>
+      <div class="note-entry"><div class="ne-body"><div class="ne-text">${esc(l.rawPaste)}</div></div></div>
+    </div>
+  </details>` : '';
+  showModal({
+    title: 'Notes & AI',
+    onBack: `briefListing('${l.id}')`,
+    body: `<div class="stack">
+      <div class="group-sub">${esc(l.address||'Listing')} — capture notes over time, then generate structured AI summaries. Neighbourhood / community / city / developer notes are shared with other listings that have the same value.</div>
+      ${sections.join('')}
+      ${rawSection}
+    </div>`,
+    footer: `<button class="btn ghost full" onclick="briefListing('${l.id}')">Back to brief</button>`
   });
 }
 
@@ -2175,8 +2641,12 @@ function openSettings() { openMenu(); }
 function openMenu() {
   const sess = currentSession();
   const themeNow = loadTheme();
+  const claudeCfg = loadClaudeCfg();
+  const entityTotal = ENTITY_TYPES.reduce((a,t)=>a+distinctEntityKeys(t).length, 0);
   const menu = [
+    { icon:'🗺️', title:'Areas & Intel', sub: entityTotal ? (entityTotal + ' tracked: neighbourhoods, buildings, developers…') : 'Neighbourhood / building / developer notes', fn:'openEntityBrowser()' },
     { icon:'🔒', title:'Account & Security', sub: sess ? esc(sess.email) : 'Google Sign-In + Face ID', fn:'openAuthPage()' },
+    { icon:'✦', title:'Claude API', sub: claudeCfg.apiKey ? ('On — ' + (CLAUDE_MODELS[claudeCfg.model]||claudeCfg.model)) : 'Off — add key for AI features', fn:'openClaudePage()' },
     { icon:'☁️', title:'Cloud Sync', sub: sync.enabled ? 'On — GitHub Gist' : 'Off', fn:'openSyncPage()' },
     { icon:'🏦', title:'Mortgage Defaults', sub:'Global cashflow assumptions', fn:'openMortgagePage()' },
     { icon:'💾', title:'Backup & Data', sub:`${state.clients.length} clients · ${state.listings.length} listings`, fn:'openBackupPage()' },
@@ -2250,6 +2720,64 @@ function openAuthPage() {
     </div>`,
     footer: `<button class="btn ghost" onclick="openMenu()">Back</button><div style="flex:1"></div><button class="btn" onclick="saveAuthSettings()">Save</button>`
   });
+}
+
+function openClaudePage() {
+  const c = loadClaudeCfg();
+  showModal({
+    title: 'Claude API',
+    onBack: 'openMenu()',
+    body: `<div class="stack">
+      <div class="group-sub">Powers the AI summaries (persona, property, neighbourhood, community, city, developer) and the listing-fit screening. Your key is stored only in this browser and sent directly to Anthropic.</div>
+      <div class="field">
+        <label>Anthropic API key</label>
+        <input id="cl-key" type="password" value="${esc(c.apiKey||'')}" placeholder="sk-ant-..." autocomplete="off">
+      </div>
+      <div class="field">
+        <label>Model</label>
+        <select id="cl-model">
+          ${Object.entries(CLAUDE_MODELS).map(([id,label]) => `<option value="${id}" ${c.model===id?'selected':''}>${label}</option>`).join('')}
+        </select>
+        <div class="muted smaller" style="margin-top:4px">Start with Haiku (cheapest). Switch to Sonnet/Opus anytime for richer analysis.</div>
+      </div>
+      <div style="display:flex; gap:8px; flex-wrap:wrap">
+        <button class="btn" onclick="saveClaudeSettings()">Save</button>
+        <button class="btn ghost" onclick="testClaude()">Test connection</button>
+      </div>
+      <div id="cl-test" class="muted smaller"></div>
+      <details>
+        <summary>How to get a key</summary>
+        <ol style="line-height:1.7; padding-left:20px; margin:8px 0">
+          <li>Go to <b>console.anthropic.com</b> → sign in</li>
+          <li>Left menu → <b>API Keys</b> → Create Key → copy it (starts with <code>sk-ant-</code>)</li>
+          <li>Add billing/credits under <b>Plans &amp; Billing</b> if you haven't</li>
+          <li>Paste the key above → Save → Test connection</li>
+        </ol>
+        <div class="muted smaller">Heads up: this key has billing attached and lives in your browser. Anyone with access to this device/browser could read it. Keep your device locked.</div>
+      </details>
+    </div>`,
+    footer: `<button class="btn ghost" onclick="openMenu()">Back</button><div style="flex:1"></div><button class="btn" onclick="saveClaudeSettings()">Save</button>`
+  });
+}
+function saveClaudeSettings() {
+  const apiKey = $('#cl-key').value.trim();
+  const model = $('#cl-model').value;
+  saveClaudeCfg({ apiKey, model });
+  toast('Claude API settings saved');
+  closeModal();
+}
+async function testClaude() {
+  const apiKey = $('#cl-key').value.trim();
+  const model = $('#cl-model').value;
+  if (!apiKey) { toast('Enter a key first'); return; }
+  saveClaudeCfg({ apiKey, model });
+  const el = $('#cl-test'); if (el) { el.textContent = 'Testing…'; }
+  try {
+    const reply = await callClaude('You are a connection test.', 'Reply with the single word: OK', { maxTokens: 16 });
+    if (el) el.innerHTML = '<span style="color:var(--good)">✓ Connected — model replied: ' + esc(reply.slice(0,40)) + '</span>';
+  } catch (e) {
+    if (el) el.innerHTML = '<span style="color:var(--bad)">✗ ' + esc(e.message) + '</span>';
+  }
 }
 
 function openSyncPage() {
@@ -2448,6 +2976,151 @@ function importData(file) {
     } catch (e) { alert('Could not import: ' + e.message); }
   };
   reader.readAsText(file);
+}
+
+// ---- Notes & AI summaries (reusable) ---------------
+// Section descriptors live in _notesCtx, keyed by a short section key, so onclick
+// handlers can stay free of fragile escaped strings.
+let _notesCtx = {};
+let _genBusy = {};
+
+function notesAccessor(desc) {
+  if (desc.kind === 'client') {
+    const c = state.clients.find(x => x.id === desc.clientId);
+    return {
+      getNotes: () => (c.personaNotes || (c.personaNotes = [])),
+      getSummary: () => c.personaSummary || null,
+      setSummary: (s) => { c.personaSummary = s; },
+    };
+  }
+  if (desc.kind === 'listing') {
+    const l = state.listings.find(x => x.id === desc.listingId);
+    return {
+      getNotes: () => (l.propertyNotes || (l.propertyNotes = [])),
+      getSummary: () => l.propertySummary || null,
+      setSummary: (s) => { l.propertySummary = s; },
+    };
+  }
+  // entity (shared)
+  if (!state.entities[desc.entityType]) state.entities[desc.entityType] = {};
+  const store = state.entities[desc.entityType];
+  if (!store[desc.entityKey]) store[desc.entityKey] = { notes: [], summary: null };
+  const b = store[desc.entityKey];
+  return {
+    getNotes: () => (b.notes || (b.notes = [])),
+    getSummary: () => b.summary || null,
+    setSummary: (s) => { b.summary = s; },
+  };
+}
+
+function mdLite(text) {
+  let h = esc(text);
+  h = h.replace(/^#{1,6}\s*(.+)$/gm, '<b>$1</b>');
+  h = h.replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>');
+  h = h.replace(/^\s*[-*]\s+(.+)$/gm, '• $1');
+  h = h.replace(/\n/g, '<br>');
+  return h;
+}
+
+function summaryLabel(key, title) {
+  const acc = notesAccessor(_notesCtx[key]);
+  const n = acc.getNotes().length;
+  const has = !!acc.getSummary();
+  return `${title}${n ? ` · ${n} note${n===1?'':'s'}` : ''}${has ? ' · ✓ summary' : ''}`;
+}
+
+function renderNotesSectionInner(key) {
+  const desc = _notesCtx[key];
+  const acc = notesAccessor(desc);
+  const notes = acc.getNotes().slice().sort((a,b)=>(b.date||'').localeCompare(a.date||''));
+  const summary = acc.getSummary();
+  const busy = _genBusy[key];
+  const shared = desc.kind === 'entity'
+    ? `<div class="muted smaller" style="margin-bottom:8px">Shared across all listings with ${ENTITY_LABEL[desc.entityType]} "${esc(desc.entityKey)}".</div>` : '';
+  const history = notes.length
+    ? notes.map(n => `<div class="note-entry">
+        <div class="ne-body">
+          <div class="ne-date">${(n.date||'').slice(0,10)}</div>
+          <div class="ne-text">${esc(n.text)}</div>
+        </div>
+        <button class="ne-del" onclick="deleteNote('${key}','${n.id}')" aria-label="Delete">✕</button>
+      </div>`).join('')
+    : '<div class="muted smaller">No notes yet.</div>';
+  const summaryHtml = summary ? `<div class="summary-box">
+    <div class="sb-head"><span class="sb-title">AI Summary</span>
+      <button class="btn ghost small" onclick="genSummary('${key}')" ${busy?'disabled':''}>Regenerate</button></div>
+    <div class="sb-body">${mdLite(summary.text)}</div>
+    <div class="sb-meta">Generated ${new Date(summary.generatedAt).toLocaleString()} · from ${summary.basedOn} note${summary.basedOn===1?'':'s'}</div>
+  </div>` : '';
+  return `${shared}
+    ${history}
+    <div class="note-add">
+      <textarea id="noteinput-${key}" placeholder="Add a note (e.g. what you learned after talking to them)…"></textarea>
+      <div style="display:flex; gap:8px; flex-wrap:wrap">
+        <button class="btn small" onclick="addNote('${key}')">Add note</button>
+        <button class="btn ghost small ${busy?'gen-btn-busy':''}" onclick="genSummary('${key}')">${busy ? 'Generating…' : (summary ? 'Regenerate summary' : '✦ Generate summary')}</button>
+      </div>
+    </div>
+    ${summaryHtml}`;
+}
+
+function notesSectionHtml(key, title) {
+  return `<details open id="sec-${key}" class="group" style="padding:0">
+    <summary id="sum-${key}" style="padding:14px">${summaryLabel(key, title)}</summary>
+    <div id="secbody-${key}" style="padding:0 14px 14px">${renderNotesSectionInner(key)}</div>
+  </details>`;
+}
+
+function refreshNotesSection(key) {
+  const body = $('#secbody-' + key);
+  const sum = $('#sum-' + key);
+  if (body) body.innerHTML = renderNotesSectionInner(key);
+  if (sum) {
+    const desc = _notesCtx[key];
+    // title is everything before the first " · " in current label fallback; recompute from stored title
+    sum.textContent = summaryLabel(key, _notesCtx[key]._title || sum.textContent.split(' · ')[0]);
+  }
+}
+
+function addNote(key) {
+  const input = $('#noteinput-' + key);
+  const text = (input?.value || '').trim();
+  if (!text) { toast('Type a note first'); return; }
+  notesAccessor(_notesCtx[key]).getNotes().push({ id: uid(), date: new Date().toISOString(), text });
+  save();
+  refreshNotesSection(key);
+  toast('Note saved');
+}
+
+function deleteNote(key, noteId) {
+  const arr = notesAccessor(_notesCtx[key]).getNotes();
+  const i = arr.findIndex(n => n.id === noteId);
+  if (i >= 0) arr.splice(i, 1);
+  save();
+  refreshNotesSection(key);
+}
+
+async function genSummary(key) {
+  if (!hasClaudeKey()) { toast('Add your Claude API key in Menu → Claude API'); return; }
+  const desc = _notesCtx[key];
+  const acc = notesAccessor(desc);
+  const notes = acc.getNotes();
+  if (!notes.length) { toast('Add at least one note first'); return; }
+  let prompt;
+  if (desc.kind === 'client') prompt = buildPersonaPrompt(state.clients.find(c => c.id === desc.clientId));
+  else if (desc.kind === 'listing') prompt = buildPropertyPrompt(state.listings.find(l => l.id === desc.listingId));
+  else prompt = buildEntityPrompt(desc.entityType, desc.entityKey, notes);
+  _genBusy[key] = true; refreshNotesSection(key);
+  try {
+    const text = await callClaude(prompt.system, prompt.user, { maxTokens: 1000 });
+    acc.setSummary({ text, generatedAt: new Date().toISOString(), basedOn: notes.length });
+    save();
+  } catch (e) {
+    toast('Failed: ' + e.message);
+  } finally {
+    _genBusy[key] = false;
+    refreshNotesSection(key);
+  }
 }
 
 // ---- Modal ------------------------------------------
