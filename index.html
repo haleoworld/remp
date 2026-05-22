@@ -143,7 +143,7 @@
   }
 
   /* Body */
-  main { padding-bottom: 96px; }
+  main { padding-bottom: 150px; }
 
   /* Feed item */
   .feed-item {
@@ -234,7 +234,7 @@
   .fab {
     position: fixed;
     right: max(16px, calc(50vw - 284px));
-    bottom: max(86px, calc(72px + env(safe-area-inset-bottom)));
+    bottom: calc(126px + env(safe-area-inset-bottom));
     width: 56px; height: 56px; border-radius: 50%;
     background: var(--accent); color: var(--accent-text);
     display: flex; align-items: center; justify-content: center;
@@ -416,7 +416,7 @@
 
   /* Toast */
   .toast {
-    position: fixed; left: 50%; bottom: calc(96px + env(safe-area-inset-bottom));
+    position: fixed; left: 50%; bottom: calc(132px + env(safe-area-inset-bottom));
     transform: translate(-50%, 8px);
     background: var(--accent); color: var(--accent-text);
     padding: 10px 18px; border-radius: 999px;
@@ -596,6 +596,79 @@
   .cl-card .cl-sum { font-size: 13px; line-height: 1.4; margin-top: 8px; color: var(--text-soft); }
   .cl-card .cl-sum .fit-badge { margin-right: 6px; }
   .add-listing-bar { display: flex; gap: 8px; margin-bottom: 12px; }
+
+  /* Feedback comment bar (above tabs) */
+  .comment-bar {
+    position: fixed; left: 50%; transform: translateX(-50%);
+    bottom: calc(56px + env(safe-area-inset-bottom));
+    width: 100%; max-width: 600px; z-index: 13;
+    display: flex; align-items: center; gap: 10px;
+    padding: 8px 12px;
+    background: var(--bg);
+    border-top: 1px solid var(--border);
+  }
+  .comment-bar .cb-pill {
+    flex: 1; background: var(--bg-soft); border: 1px solid var(--border);
+    border-radius: 999px; padding: 10px 16px; color: var(--muted); font-size: 14px;
+    cursor: pointer; user-select: none;
+  }
+  .comment-bar .cb-badge {
+    min-width: 22px; height: 22px; padding: 0 7px; border-radius: 999px;
+    background: var(--accent); color: var(--accent-text);
+    font-size: 12px; font-weight: 700;
+    display: flex; align-items: center; justify-content: center;
+  }
+
+  /* Feedback drawer */
+  .fb-drawer {
+    position: fixed; inset: 0; z-index: 150;
+    background: rgba(0,0,0,0.5);
+    display: none; align-items: flex-end; justify-content: center;
+  }
+  .fb-drawer.open { display: flex; }
+  .fb-sheet {
+    background: var(--bg); color: var(--text);
+    width: 100%; max-width: 600px; height: 78vh; max-height: 80vh;
+    border-radius: 18px 18px 0 0;
+    display: flex; flex-direction: column; overflow: hidden;
+    transform: translateY(100%); transition: transform .28s ease;
+  }
+  .fb-drawer.open .fb-sheet { transform: translateY(0); }
+  .fb-handle { width: 38px; height: 4px; border-radius: 2px; background: var(--border-strong); margin: 8px auto 4px; flex-shrink: 0; }
+  .fb-header {
+    display: flex; align-items: center; gap: 8px; padding: 6px 16px 12px;
+    border-bottom: 1px solid var(--border); flex-shrink: 0;
+  }
+  .fb-header h2 { margin: 0; font-size: 17px; font-weight: 800; flex: 1; }
+  .fb-header .icon-btn { width: 34px; height: 34px; border-radius: 50%; display: flex; align-items: center; justify-content: center; }
+  .fb-header .icon-btn:hover { background: var(--hover); }
+  .fb-list { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; padding: 12px 16px; }
+  .fb-item { display: flex; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--border); }
+  .fb-item .fb-check {
+    width: 22px; height: 22px; border-radius: 6px; border: 1.5px solid var(--border-strong);
+    flex-shrink: 0; margin-top: 1px; cursor: pointer;
+    display: flex; align-items: center; justify-content: center; font-size: 14px; color: transparent;
+  }
+  .fb-item.done .fb-check { background: var(--good); border-color: var(--good); color: #fff; }
+  .fb-item .fb-body { flex: 1; min-width: 0; }
+  .fb-item .fb-text { font-size: 15px; line-height: 1.4; white-space: pre-wrap; word-break: break-word; }
+  .fb-item.done .fb-text { color: var(--muted); text-decoration: line-through; }
+  .fb-item .fb-meta { font-size: 12px; color: var(--muted); margin-top: 3px; }
+  .fb-item .fb-del { color: var(--muted); font-size: 16px; align-self: flex-start; padding: 2px 4px; }
+  .fb-item .fb-del:hover { color: var(--bad); }
+  .fb-empty { text-align: center; color: var(--muted); padding: 40px 16px; font-size: 14px; }
+  .fb-input-bar {
+    display: flex; gap: 8px; align-items: flex-end;
+    padding: 10px 12px; padding-bottom: max(10px, env(safe-area-inset-bottom));
+    border-top: 1px solid var(--border); flex-shrink: 0; background: var(--bg);
+  }
+  .fb-input-bar textarea {
+    flex: 1; min-height: 42px; max-height: 120px; border-radius: 18px; padding: 10px 14px; resize: none;
+  }
+  .fb-input-bar button { border-radius: 999px; padding: 10px 18px; flex-shrink: 0; }
+  .fb-seg { display: inline-flex; padding: 3px; background: var(--bg-soft); border-radius: 8px; border: 1px solid var(--border); }
+  .fb-seg button { padding: 5px 10px; font-size: 12px; font-weight: 700; border-radius: 6px; color: var(--text-soft); }
+  .fb-seg button.on { background: var(--bg); color: var(--text); }
 </style>
 </head>
 <body>
@@ -631,6 +704,11 @@
 
   <button class="fab" id="fab" onclick="onFabClick()" aria-label="Add">＋</button>
 
+  <div class="comment-bar" onclick="openFeedback()">
+    <div class="cb-pill" id="cb-pill">Add a comment, request or improvement…</div>
+    <span class="cb-badge" id="cb-badge" style="display:none">0</span>
+  </div>
+
   <nav class="tabs">
     <button data-tab="clients" onclick="switchTab('clients')">
       <span class="tab-icon">◴</span><span class="tab-label">CLIENTS</span>
@@ -646,6 +724,26 @@
 
 <div class="modal-backdrop" id="modal-backdrop" onclick="onBackdropClick(event)">
   <div class="modal" id="modal" onclick="event.stopPropagation()"></div>
+</div>
+
+<div class="fb-drawer" id="fb-drawer" onclick="if(event.target.id==='fb-drawer')closeFeedback()">
+  <div class="fb-sheet">
+    <div class="fb-handle"></div>
+    <div class="fb-header">
+      <h2 id="fb-title">Comments</h2>
+      <div class="fb-seg" id="fb-filter">
+        <button class="on" data-f="open" onclick="setFbFilter('open')">Open</button>
+        <button data-f="all" onclick="setFbFilter('all')">All</button>
+      </div>
+      <button class="icon-btn" onclick="copyAllFeedback()" title="Copy all for Claude">⧉</button>
+      <button class="icon-btn" onclick="closeFeedback()" aria-label="Close">✕</button>
+    </div>
+    <div class="fb-list" id="fb-list"></div>
+    <div class="fb-input-bar">
+      <textarea id="fb-input" rows="1" placeholder="Add a comment / request / improvement…" oninput="this.style.height='auto'; this.style.height=Math.min(this.scrollHeight,120)+'px'"></textarea>
+      <button class="btn" onclick="submitFeedback()">Post</button>
+    </div>
+  </div>
 </div>
 
 <div class="toast" id="toast"></div>
@@ -665,6 +763,8 @@ const DEFAULT_DATA = {
   listings: [],
   // Shared, entity-keyed notes + AI summaries. Mapped to listings by matching value.
   entities: { neighbourhood: {}, community: {}, building: {}, city: {}, developer: {} },
+  // In-app feedback / requests / improvements log, tagged by page.
+  feedback: [],
   settings: {
     defaultDownPct: 20,
     defaultMortgageRate: 5.0,
@@ -709,6 +809,7 @@ function loadData() {
     if (!d.settings) d.settings = structuredClone(DEFAULT_DATA.settings);
     if (!d.entities) d.entities = { neighbourhood:{}, community:{}, building:{}, city:{}, developer:{} };
     ['neighbourhood','community','building','city','developer'].forEach(k => { if (!d.entities[k]) d.entities[k] = {}; });
+    if (!Array.isArray(d.feedback)) d.feedback = [];
     // Migrate legacy listing.showings[] (per-listing) → client.showings[listingId] (per-client, notes history)
     (d.listings||[]).forEach(l => {
       if (Array.isArray(l.showings) && l.showings.length) {
@@ -1608,6 +1709,7 @@ function render() {
   if (currentTab === 'clients') { title.textContent = 'Clients'; main.innerHTML = renderClients(); }
   else if (currentTab === 'listings') { title.textContent = 'Listings'; main.innerHTML = renderListings(); }
   else if (currentTab === 'compare') { title.textContent = 'Compare'; main.innerHTML = renderCompare(); }
+  updateCommentBar();
 }
 
 function renderClients() {
@@ -3514,6 +3616,100 @@ async function genSummary(key) {
   }
 }
 
+// ---- Feedback / comments log -----------------------
+const FB_PAGE_LABEL = { clients:'Clients', listings:'Listings', compare:'Compare' };
+let _fbFilter = 'open';
+function updateCommentBar() {
+  const badge = $('#cb-badge');
+  if (!badge) return;
+  const open = state.feedback.filter(f => f.page === currentTab && f.status !== 'done').length;
+  if (open > 0) { badge.style.display = ''; badge.textContent = String(open); }
+  else badge.style.display = 'none';
+}
+function openFeedback() {
+  $('#fb-title').textContent = (FB_PAGE_LABEL[currentTab] || 'Page') + ' · comments';
+  renderFeedbackList();
+  const d = $('#fb-drawer');
+  d.classList.add('open');
+  document.body.style.overflow = 'hidden';
+  setTimeout(() => { const l = $('#fb-list'); if (l) l.scrollTop = l.scrollHeight; $('#fb-input')?.focus(); }, 120);
+}
+function closeFeedback() {
+  $('#fb-drawer').classList.remove('open');
+  document.body.style.overflow = '';
+}
+function setFbFilter(f) {
+  _fbFilter = f;
+  document.querySelectorAll('#fb-filter button').forEach(b => b.classList.toggle('on', b.dataset.f === f));
+  renderFeedbackList();
+}
+function renderFeedbackList() {
+  const list = $('#fb-list');
+  if (!list) return;
+  let items = state.feedback.filter(f => f.page === currentTab);
+  if (_fbFilter === 'open') items = items.filter(f => f.status !== 'done');
+  items.sort((a,b) => (a.date||'').localeCompare(b.date||''));
+  if (!items.length) {
+    list.innerHTML = `<div class="fb-empty">No ${_fbFilter==='open'?'open ':''}comments for ${FB_PAGE_LABEL[currentTab]} yet.<br>Type below to add the first one.</div>`;
+    return;
+  }
+  list.innerHTML = items.map(f => `<div class="fb-item ${f.status==='done'?'done':''}">
+    <div class="fb-check" onclick="toggleFeedbackDone('${f.id}')">✓</div>
+    <div class="fb-body">
+      <div class="fb-text">${esc(f.text)}</div>
+      <div class="fb-meta">${new Date(f.date).toLocaleDateString()}${f.status==='done'?' · done'+(f.completedAt?' '+new Date(f.completedAt).toLocaleDateString():''):''}</div>
+    </div>
+    <button class="fb-del" onclick="deleteFeedback('${f.id}')" aria-label="Delete">✕</button>
+  </div>`).join('');
+}
+function submitFeedback() {
+  const input = $('#fb-input');
+  const text = (input?.value || '').trim();
+  if (!text) { toast('Type something first'); return; }
+  state.feedback.push({ id: uid(), page: currentTab, date: new Date().toISOString(), text, status: 'open' });
+  save();
+  input.value = ''; input.style.height = 'auto';
+  // Make sure new comment is visible regardless of filter
+  if (_fbFilter !== 'open') { /* stays */ }
+  renderFeedbackList();
+  updateCommentBar();
+  const l = $('#fb-list'); if (l) setTimeout(() => l.scrollTop = l.scrollHeight, 30);
+}
+function toggleFeedbackDone(id) {
+  const f = state.feedback.find(x => x.id === id);
+  if (!f) return;
+  if (f.status === 'done') { f.status = 'open'; f.completedAt = null; }
+  else { f.status = 'done'; f.completedAt = new Date().toISOString(); }
+  save();
+  renderFeedbackList();
+  updateCommentBar();
+}
+function deleteFeedback(id) {
+  state.feedback = state.feedback.filter(x => x.id !== id);
+  save();
+  renderFeedbackList();
+  updateCommentBar();
+}
+async function copyAllFeedback() {
+  // Export all comments across all pages, grouped, for handing to Claude.
+  const byPage = {};
+  state.feedback.forEach(f => { (byPage[f.page] = byPage[f.page] || []).push(f); });
+  let out = 'Showings — feedback / requests / improvements\n';
+  Object.keys(byPage).forEach(pg => {
+    out += `\n## ${FB_PAGE_LABEL[pg] || pg}\n`;
+    byPage[pg].sort((a,b)=>(a.date||'').localeCompare(b.date||'')).forEach(f => {
+      out += `- [${f.status==='done'?'x':' '}] ${f.text}\n`;
+    });
+  });
+  if (!state.feedback.length) out += '\n(no comments yet)';
+  try { await navigator.clipboard.writeText(out); toast('All comments copied'); }
+  catch (e) {
+    const ta = document.createElement('textarea'); ta.value = out; document.body.appendChild(ta); ta.select();
+    try { document.execCommand('copy'); toast('All comments copied'); } catch(_) { toast('Copy failed'); }
+    ta.remove();
+  }
+}
+
 // ---- Modal ------------------------------------------
 function showModal({ title, body, footer, onBack }) {
   const m = $('#modal');
@@ -3557,7 +3753,7 @@ function boot() {
 }
 boot();
 // ESC to close modal
-document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeModal(); });
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') { closeModal(); closeFeedback(); } });
 
 // Ensure data is pushed before unload
 window.addEventListener('beforeunload', () => {
