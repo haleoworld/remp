@@ -568,6 +568,34 @@
   .fit-strong { background: rgba(0,186,124,.12); color: var(--good); }
   .fit-moderate { background: rgba(255,158,28,.12); color: var(--warn); }
   .fit-weak { background: rgba(244,33,46,.12); color: var(--bad); }
+
+  /* Client tabs */
+  .ctabs {
+    display: flex; margin: -16px -16px 0; position: sticky; top: 0; z-index: 3;
+    background: var(--bg); border-bottom: 1px solid var(--border);
+  }
+  .ctabs button {
+    flex: 1; padding: 13px 8px; font-weight: 700; font-size: 14px;
+    color: var(--muted); border-bottom: 2px solid transparent;
+    transition: color .12s, border-color .12s;
+  }
+  .ctabs button.on { color: var(--text); border-bottom-color: var(--accent); }
+  .ctab-panel-wrap { padding-top: 16px; min-height: 200px; touch-action: pan-y; }
+
+  /* Compact client listing card */
+  .cl-card {
+    border: 1px solid var(--border); border-radius: 12px;
+    padding: 12px; margin-bottom: 10px; cursor: pointer;
+    transition: background .12s;
+  }
+  .cl-card:active { background: var(--hover); }
+  @media (hover: hover) { .cl-card:hover { background: var(--hover); } }
+  .cl-card .cl-head { display: flex; align-items: flex-start; gap: 10px; }
+  .cl-card .cl-addr { flex: 1; min-width: 0; font-weight: 700; font-size: 15px; line-height: 1.3; }
+  .cl-card .cl-meta { color: var(--text-soft); font-size: 13px; margin-top: 4px; display: flex; gap: 10px; flex-wrap: wrap; }
+  .cl-card .cl-sum { font-size: 13px; line-height: 1.4; margin-top: 8px; color: var(--text-soft); }
+  .cl-card .cl-sum .fit-badge { margin-right: 6px; }
+  .add-listing-bar { display: flex; gap: 8px; margin-bottom: 12px; }
 </style>
 </head>
 <body>
@@ -681,6 +709,20 @@ function loadData() {
     if (!d.settings) d.settings = structuredClone(DEFAULT_DATA.settings);
     if (!d.entities) d.entities = { neighbourhood:{}, community:{}, building:{}, city:{}, developer:{} };
     ['neighbourhood','community','building','city','developer'].forEach(k => { if (!d.entities[k]) d.entities[k] = {}; });
+    // Migrate legacy listing.showings[] (per-listing) → client.showings[listingId] (per-client, notes history)
+    (d.listings||[]).forEach(l => {
+      if (Array.isArray(l.showings) && l.showings.length) {
+        l.showings.forEach(s => {
+          const cl = (d.clients||[]).find(c => c.id === s.clientId);
+          if (!cl) return;
+          if (!cl.showings) cl.showings = {};
+          if (!cl.showings[l.id]) cl.showings[l.id] = { notes: [], summary: null };
+          const txt = ((s.reaction ? '['+s.reaction+'] ' : '') + (s.notes||'')).trim();
+          if (txt) cl.showings[l.id].notes.push({ id: uid(), date: s.showingDate || new Date().toISOString(), text: txt });
+        });
+      }
+      delete l.showings;
+    });
     return d;
   } catch (e) {
     console.error('load failed', e);
@@ -743,6 +785,51 @@ function totalCostPsf(l, client) {
 }
 function fmt$psf(n)   { return n == null ? '—' : '$' + Math.round(n).toLocaleString('en-CA') + '/sf'; }
 function fmt$psfm(n)  { return n == null ? '—' : '$' + n.toFixed(2) + '/sf'; }
+
+// Bedrooms+dens and full-baths+washrooms helpers
+function totalBeds(l) { return (+l.beds||0) + (+l.dens||0); }
+function effBaths(l)  { return (+l.baths||0) + 0.5*(+l.washrooms||0); }
+function bedsLabel(l) {
+  if (l.beds==null && !l.dens) return '—';
+  const b = l.beds!=null ? l.beds : 0;
+  return (+l.dens>0) ? `${b}+${l.dens}` : `${b}`;
+}
+function bathsLabel(l) {
+  if (l.baths==null && !l.washrooms) return '—';
+  const b = l.baths!=null ? l.baths : 0;
+  return (+l.washrooms>0) ? `${b}+${l.washrooms}` : `${b}`;
+}
+
+// Gather the agent's historical notes/summaries (property + entities) as parse context.
+function gatherParseContext({ listingId, neighbourhood, community, building, city, builder }) {
+  const blocks = [];
+  const l = listingId ? state.listings.find(x => x.id === listingId) : null;
+  if (l) {
+    if (l.propertySummary) blocks.push('PROPERTY NOTES (summary):\n' + l.propertySummary.text);
+    else if (l.propertyNotes && l.propertyNotes.length) blocks.push('PROPERTY NOTES:\n' + notesToText(l.propertyNotes));
+  }
+  const ent = (type, key, label) => {
+    const k = (key||'').trim();
+    if (!k) return;
+    const b = state.entities && state.entities[type] && state.entities[type][k];
+    if (!b) return;
+    if (b.summary) blocks.push(label + ' NOTES (summary):\n' + b.summary.text);
+    else if (b.notes && b.notes.length) blocks.push(label + ' NOTES:\n' + notesToText(b.notes));
+  };
+  ent('neighbourhood', neighbourhood, 'NEIGHBOURHOOD');
+  ent('community', community, 'COMMUNITY');
+  ent('building', building, 'BUILDING');
+  ent('city', city, 'CITY/MARKET');
+  ent('developer', builder, 'DEVELOPER');
+  return blocks.join('\n\n');
+}
+function parseContextFromForm() {
+  return gatherParseContext({
+    listingId: window._editListingId,
+    neighbourhood: $('#f-lnbhd')?.value, community: $('#f-lcomm')?.value,
+    building: $('#f-lbuild')?.value, city: $('#f-lcity')?.value, builder: $('#f-lbuilder')?.value,
+  });
+}
 function toggleChip(label, ev) {
   if (ev) { ev.preventDefault(); ev.stopPropagation(); }
   const i = label.querySelector('input[type="checkbox"]');
@@ -815,12 +902,12 @@ function computeMatchScore(listing, client) {
     parts.push({ key: 'price', score: s, weight: w.price ?? 2 });
   }
   if (c.bedsMin) {
-    const b = +listing.beds || 0;
+    const b = totalBeds(listing); // bedrooms + dens
     const s = b >= c.bedsMin ? 100 : Math.max(0, (b / c.bedsMin) * 100);
     parts.push({ key: 'beds', score: s, weight: w.beds ?? 1 });
   }
   if (c.bathsMin) {
-    const b = +listing.baths || 0;
+    const b = effBaths(listing); // full baths + 0.5 per washroom
     const s = b >= c.bathsMin ? 100 : Math.max(0, (b / c.bathsMin) * 100);
     parts.push({ key: 'baths', score: s, weight: w.baths ?? 0.5 });
   }
@@ -854,6 +941,24 @@ function scoreClass(score, threshold) {
   return 'bad';
 }
 
+// Blended match score: rule-based criteria + AI screening (when available).
+// Returns { score, crit, ai }. If no AI screening yet, score == criteria score.
+function effectiveScore(client, listing) {
+  const crit = computeMatchScore(listing, client).score;
+  const ai = client.screenings && client.screenings[listing.id] ? client.screenings[listing.id].score : null;
+  if (ai == null) return { score: crit, crit, ai: null };
+  return { score: Math.round(crit * 0.5 + ai * 0.5), crit, ai };
+}
+
+function firstSentence(text, max=130) {
+  if (!text) return '';
+  const t = String(text).replace(/\s+/g, ' ').trim();
+  const m = t.match(/^.*?[.!?](\s|$)/);
+  let s = m ? m[0].trim() : t;
+  if (s.length > max) s = s.slice(0, max).trim() + '…';
+  return s;
+}
+
 // ---- Cashflow --------------------------------------
 function renderCashflowPreviewContent(l) {
   const cfYes = computeCashflow(l, { withRental: true });
@@ -885,6 +990,70 @@ function updateCashflowPreview() {
     estRentalIncome: numOrNull($('#f-lrent')?.value) || 0,
   };
   el.innerHTML = renderCashflowPreviewContent(tmp);
+}
+function updateUsableHint() {
+  const el = $('#f-usable-hint');
+  if (!el) return;
+  const usable = numOrNull($('#f-lusable')?.value);
+  const stated = numOrNull($('#f-lsize')?.value);
+  if (usable && stated) {
+    const pct = Math.round((usable - stated) / stated * 100);
+    const word = pct > 0 ? 'larger' : (pct < 0 ? 'smaller' : 'same');
+    el.textContent = `Usable ${usable.toLocaleString()} sf vs stated ${stated.toLocaleString()} sf — ${pct>=0?'+':''}${pct}% (${word})`;
+  } else if (usable) {
+    el.textContent = `Usable ${usable.toLocaleString()} sf (sum of rooms)`;
+  } else {
+    el.textContent = '';
+  }
+}
+
+// ---- Re-parse the current raw text into the open edit form ----
+function applyParsedToForm(p) {
+  const set = (id, v) => { if (v != null && v !== '' && $(id)) $(id).value = v; };
+  set('#f-laddr', p.address); set('#f-lcity', p.city);
+  if (p.propertyType && $('#f-ltype')) $('#f-ltype').value = p.propertyType;
+  set('#f-lprice', p.price); set('#f-lbeds', p.beds); set('#f-lbaths', p.baths); set('#f-lsize', p.sizeSqft);
+  if (p.dens != null) set('#f-ldens', p.dens);
+  if (p.washrooms != null) set('#f-lwash', p.washrooms);
+  set('#f-lmaint', p.maintenanceFee); set('#f-ltax', p.propertyTax); set('#f-lrent', p.estRentalIncome);
+  set('#f-lmls', p.mlsNumber); set('#f-lbuilder', p.builder);
+  if (p.parkingSpaces != null) set('#f-lparking', p.parkingSpaces);
+  if (p.lockers != null) set('#f-llocker', p.lockers);
+  set('#f-lshowing', p.showingInstructions);
+  updateCashflowPreview(); updateUsableHint();
+}
+function applyExtractionToForm(p) {
+  applyParsedToForm(p);
+  const set = (id, v) => { if (v != null && v !== '' && $(id)) $(id).value = v; };
+  set('#f-lnbhd', p.neighbourhood); set('#f-lcomm', p.community); set('#f-lbuild', p.building);
+  set('#f-loccupancy', p.occupancy); set('#f-loffer', p.offerDetails); set('#f-lclosing', p.closing);
+  set('#f-lreason', p.reasonToSell); set('#f-lagent', p.listingAgent);
+  if (p.usableSqft != null) set('#f-lusable', p.usableSqft);
+  updateUsableHint();
+}
+function reparseQuick() {
+  const raw = $('#f-lraw')?.value || '';
+  if (!raw.trim()) { toast('Nothing to parse — paste listing text first'); return; }
+  const ctx = parseContextFromForm();
+  applyParsedToForm(parseListingText(raw + (ctx ? '\n\n' + ctx : ''), $('#f-url')?.value || ''));
+  toast('Re-parsed (offline)');
+}
+async function reparseAI() {
+  const raw = $('#f-lraw')?.value || '';
+  if (!raw.trim()) { toast('Nothing to parse — paste listing text first'); return; }
+  if (!hasClaudeKey()) { toast('Add your Claude API key in Menu → Claude API'); return; }
+  const btn = $('#reparse-ai-btn');
+  if (btn) { btn.textContent = 'Parsing…'; btn.classList.add('gen-btn-busy'); }
+  try {
+    const { system, user } = buildExtractionPrompt(raw, parseContextFromForm());
+    const out = await callClaude(system, user, { maxTokens: 1100 });
+    applyExtractionToForm(parseExtraction(out));
+    toast('AI re-parsed — review and save');
+  } catch (e) {
+    toast('AI parse failed: ' + e.message);
+  } finally {
+    if (btn) { btn.textContent = '✦ Re-parse with AI'; btn.classList.remove('gen-btn-busy'); }
+  }
 }
 
 // Resolve mortgage assumptions: a client's own override wins, else global defaults.
@@ -1286,6 +1455,11 @@ function buildPropertyPrompt(listing) {
   return { system: SUMMARY_SYS, user };
 }
 
+function buildShowingPrompt(client, listing, notes) {
+  const user = `These are the agent's chronological post-showing notes for client "${client?.name||'the client'}" about the listing at "${listing?.address||'this property'}". Produce a structured summary covering:\n\n1. The client's overall reaction & level of interest\n2. What they liked\n3. Concerns / objections / dealbreakers\n4. Open questions and any conditions\n5. Suggested next steps for the agent\n\nNotes:\n${notesToText(notes) || '(no notes yet)'}`;
+  return { system: SUMMARY_SYS, user };
+}
+
 const ENTITY_LABEL = { neighbourhood: 'neighbourhood', community: 'community', city: 'city / market', developer: 'developer / builder' };
 function buildEntityPrompt(type, key, notes) {
   const label = ENTITY_LABEL[type] || type;
@@ -1299,21 +1473,28 @@ function buildEntityPrompt(type, key, notes) {
   return { system: SUMMARY_SYS, user };
 }
 
-function buildExtractionPrompt(raw) {
-  const system = 'You extract structured real-estate listing data from pasted text. Respond with ONLY a JSON object — no prose, no markdown, no backticks.';
-  const user = `Extract these fields from the listing text below. Use null when a field is not present. Numbers must be plain integers (no $, no commas). Return ONLY this JSON shape:
-{"address":"","city":"","neighbourhood":"","community":"","building":"","propertyType":"","price":null,"beds":null,"baths":null,"sizeSqft":null,"maintenanceFee":null,"propertyTax":null,"estRentalIncome":null,"mlsNumber":"","builder":"","parkingSpaces":null,"lockers":null}
+function buildExtractionPrompt(raw, context) {
+  const system = 'You extract structured real-estate listing data from pasted text, and make careful inferences for an agent. Respond with ONLY a JSON object — no prose, no markdown, no backticks.';
+  const user = `Extract/infer these fields from the listing text below. Use null for numbers and "" for strings when not present. Numbers must be plain integers (no $, no commas). Return ONLY this JSON shape:
+{"address":"","city":"","neighbourhood":"","community":"","building":"","propertyType":"","price":null,"beds":null,"dens":null,"baths":null,"washrooms":null,"sizeSqft":null,"maintenanceFee":null,"propertyTax":null,"estRentalIncome":null,"mlsNumber":"","builder":"","parkingSpaces":null,"lockers":null,"occupancy":"","showingInstructions":"","offerDetails":"","closing":"","reasonToSell":"","listingAgent":"","usableSqft":null}
 
 Guidance:
 - propertyType: best match of Detached, Semi-Detached, Townhouse, Condo, Condo Townhouse, Multi-Plex.
-- propertyTax: ANNUAL amount.
-- maintenanceFee: MONTHLY condo/maintenance fee.
-- "community" = broader development/community name; "building" = the specific building/condo name; "builder" = the developer company.
-- beds: if listed like "3+1", return the total (4).
+- propertyTax: ANNUAL amount. maintenanceFee: MONTHLY.
+- "community" = broader development/community name; "building" = the specific building/condo name; "builder" = developer company.
+- beds: number of TRUE BEDROOMS only (exclude dens). dens: number of dens/offices/flex rooms. E.g. "3+1" → beds 3, dens 1.
+- baths: number of FULL bathrooms (have a tub or shower — 3pc/4pc/5pc). washrooms: number of half/powder baths WITHOUT a bathtub (2-piece). E.g. "2.5 baths" usually → baths 2, washrooms 1.
 - lockers: integer count (0 if "none").
+- occupancy: Vacant / Owner-occupied / Tenant-occupied / Unknown.
+- showingInstructions: how to book & access showings — booking system (Broker Bay / ShowingTime / call listing agent), required notice (e.g. 24h), hours/restrictions, lockbox vs appointment, must-accompany, pets, shoes-off, any "do not" notes. "" if none stated.
+- offerDetails: offer presentation date/timing or "Any time" if no holdback, plus instructions.
+- closing: seller's closing timeline/preference.
+- reasonToSell: INFER motivation/urgency from days on market, price-change history, stated reasons, assignment/power-of-sale/estate flags, etc. "Unknown" if no signal.
+- listingAgent: listing agent name + brokerage + phone/email if present.
+- usableSqft: if room dimensions are listed, compute each room's area and SUM them. Metres (e.g. "3.5 x 5.2 m") → area_m2 = w*l, sqft = area_m2 * 10.7639. Feet → w*l directly. Round to integer. null if no room dimensions.
 
 Listing text:
-${raw}`;
+${raw}${context ? `\n\nADDITIONAL CONTEXT — the agent's own historical notes about this property and its neighbourhood / community / building / city / developer. Use these to INFORM and cross-check (especially occupancy, reason-to-sell, condition), but the listing text above is the primary source for objective numbers (price, size, beds, baths):\n${context}` : ''}`;
   return { system, user };
 }
 function parseExtraction(text) {
@@ -1355,11 +1536,18 @@ function buildScreeningPrompt(client, listing) {
     listing.builder ? `Developer: ${listing.builder}` : '',
     `Type: ${listing.propertyType || '—'}`,
     `Price: ${fmt$(listing.price)}`,
-    `Beds/Baths: ${listing.beds||'—'}/${listing.baths||'—'}`,
+    `Bedrooms: ${listing.beds??'—'}${listing.dens?(' + '+listing.dens+' den'):''}`,
+    `Bathrooms: ${listing.baths??'—'} full${listing.washrooms?(' + '+listing.washrooms+' washroom (no tub)'):''}`,
     listing.sizeSqft ? `Size: ${listing.sizeSqft} sqft (${fmt$psf(pricePsf(listing))})` : '',
     `Maintenance: ${fmt$(listing.maintenanceFee)}/mo, Tax: ${fmt$(listing.propertyTax)}/yr`,
     listing.estRentalIncome ? `Est. rent: ${fmt$(listing.estRentalIncome)}/mo` : '',
+    (listing.usableSqft && listing.sizeSqft) ? `Usable sqft (sum of rooms): ${listing.usableSqft} vs stated ${listing.sizeSqft}` : '',
     `Est. cashflow: ${fmtMoneySigned(cf.netMonthly)}/mo with rent, ${fmtMoneySigned(cfNo.netMonthly)}/mo without`,
+    listing.occupancy ? `Occupancy: ${listing.occupancy}` : '',
+    listing.showingInstructions ? `Showing info: ${listing.showingInstructions}` : '',
+    listing.offerDetails ? `Offer details: ${listing.offerDetails}` : '',
+    listing.closing ? `Closing: ${listing.closing}` : '',
+    listing.reasonToSell ? `Reason to sell / motivation: ${listing.reasonToSell}` : '',
     listing.propertySummary ? `\nPROPERTY INTEL:\n${listing.propertySummary.text}` : '',
     ent('neighbourhood', listing.neighbourhood) ? `\nNEIGHBOURHOOD INTEL:\n${ent('neighbourhood', listing.neighbourhood)}` : '',
     ent('community', listing.community) ? `\nCOMMUNITY INTEL:\n${ent('community', listing.community)}` : '',
@@ -1368,7 +1556,15 @@ function buildScreeningPrompt(client, listing) {
     ent('developer', listing.builder) ? `\nDEVELOPER INTEL:\n${ent('developer', listing.builder)}` : '',
   ].filter(Boolean).join('\n');
 
-  const user = `Assess how well this LISTING fits this CLIENT.\n\n=== CLIENT ===\n${clientBlock}\n\n=== LISTING ===\n${listingBlock}\n\nReturn ONLY this JSON (no markdown, no backticks):\n{"score": <integer 0-100>, "fit": "<strong|moderate|weak>", "analysis": "<3-6 sentence practical analysis: why it fits or not, key strengths, key concerns, and a recommendation>"}`;
+  // This client's own post-showing notes/summary for THIS listing (strong signal of real interest).
+  const sh = client.showings && client.showings[listing.id];
+  let showingBlock = '';
+  if (sh) {
+    if (sh.summary) showingBlock = `\n=== THIS CLIENT'S POST-SHOWING FEEDBACK (summary) ===\n${sh.summary.text}`;
+    else if (sh.notes && sh.notes.length) showingBlock = `\n=== THIS CLIENT'S POST-SHOWING NOTES ===\n${notesToText(sh.notes)}`;
+  }
+
+  const user = `Assess how well this LISTING fits this CLIENT. If post-showing feedback is present, weight it heavily — it reflects the client's real reaction after seeing the property.\n\n=== CLIENT ===\n${clientBlock}\n\n=== LISTING ===\n${listingBlock}${showingBlock}\n\nReturn ONLY this JSON (no markdown, no backticks):\n{"score": <integer 0-100>, "fit": "<strong|moderate|weak>", "analysis": "<3-6 sentence practical analysis: why it fits or not, key strengths, key concerns, post-showing reaction if any, and a recommendation>"}`;
   return { system: SCREEN_SYS, user };
 }
 
@@ -1424,16 +1620,16 @@ function renderClients() {
   }
   return state.clients.map(c => {
     const t = c.criteria?.matchThreshold || 70;
-    const matches = state.listings.filter(l => computeMatchScore(l, c).score >= t).length;
-    const assigned = state.listings.filter(l => (l.assignedClientIds||[]).includes(c.id)).length;
+    const assignedListings = state.listings.filter(l => (l.assignedClientIds||[]).includes(c.id));
+    const strong = assignedListings.filter(l => effectiveScore(c, l).score >= t).length;
     return `<div class="feed-item" onclick="openClient('${c.id}')">
       <div class="avatar">${esc(initials(c.name))}</div>
       <div class="body">
         <h3>${esc(c.name)}</h3>
         <div class="sub">${esc(criteriaSummary(c))}</div>
         <div class="meta">
-          <span>${matches} match${matches===1?'':'es'}</span>
-          <span>${assigned} assigned</span>
+          <span>${assignedListings.length} listing${assignedListings.length===1?'':'s'}</span>
+          <span>${strong} strong fit${strong===1?'':'s'}</span>
           ${c.phone?'<span>'+esc(c.phone)+'</span>':''}
         </div>
       </div>
@@ -1467,7 +1663,7 @@ function renderListings() {
   if (_filterClientId) {
     activeClient = state.clients.find(c => c.id === _filterClientId);
     if (activeClient) {
-      visible = visible.map(l => ({...l, _score: computeMatchScore(l, activeClient).score}));
+      visible = visible.map(l => ({...l, _score: effectiveScore(activeClient, l).score}));
       if (_onlyMatches) {
         const t = activeClient.criteria?.matchThreshold || 70;
         visible = visible.filter(l => l._score >= t);
@@ -1501,14 +1697,14 @@ function renderListingFeed(l, client) {
 
   let scoreHtml = '';
   if (client) {
-    const score = l._score ?? computeMatchScore(l, client).score;
+    const score = l._score ?? effectiveScore(client, l).score;
     const t = client.criteria?.matchThreshold || 70;
     scoreHtml = `<div class="score ${scoreClass(score, t)}">${score}%</div>`;
   }
 
   const specs = [];
-  if (l.beds != null) specs.push(`${l.beds} bd`);
-  if (l.baths != null) specs.push(`${l.baths} ba`);
+  if (l.beds != null || l.dens) specs.push(`${bedsLabel(l)} bd`);
+  if (l.baths != null || l.washrooms) specs.push(`${bathsLabel(l)} ba`);
   if (l.sizeSqft) specs.push(`${(+l.sizeSqft).toLocaleString()} sf`);
   if (l.parkingSpaces != null) specs.push(`${l.parkingSpaces} prkg`);
   if (l.lockers != null) specs.push(l.lockers > 0 ? (l.lockers === 1 ? 'locker' : l.lockers + ' lkrs') : 'no lkr');
@@ -1589,7 +1785,8 @@ function renderCompare() {
         ${l.builder?`<dt>Builder</dt><dd>${esc(l.builder)}</dd>`:''}
         <dt>Price</dt><dd>${fmt$(l.price)}</dd>
         <dt>Price / sf</dt><dd>${fmt$psf(pricePsf(l))}</dd>
-        <dt>Bed / Bath</dt><dd>${l.beds||'—'} / ${l.baths||'—'}</dd>
+        <dt>Bed (+den)</dt><dd>${bedsLabel(l)}</dd>
+        <dt>Bath (+powder)</dt><dd>${bathsLabel(l)}</dd>
         <dt>Size</dt><dd>${l.sizeSqft ? (+l.sizeSqft).toLocaleString()+' sf' : '—'}</dd>
         <dt>Parking</dt><dd>${l.parkingSpaces!=null?l.parkingSpaces:'—'}</dd>
         <dt>Locker</dt><dd>${l.lockers!=null?(l.lockers>0?(l.lockers===1?'Yes':l.lockers):'No'):'—'}</dd>
@@ -1611,58 +1808,116 @@ function renderCompare() {
   return head + `<div class="compare-wrap"><div class="compare">${cols}</div></div>`;
 }
 
-// ---- Client edit / view ----------------------------
+// ---- Client view (tabbed) --------------------------
+let _clientCtx = { id: null, tab: 0 };
+const CLIENT_TABS = ['Overview', 'Persona', 'Listings'];
+
 function openClient(id) {
   const c = state.clients.find(x => x.id === id);
   if (!c) return;
-  const matched = state.listings.map(l => ({l, m: computeMatchScore(l, c)})).sort((a,b)=>b.m.score-a.m.score);
-  const t = c.criteria?.matchThreshold || 70;
-  const above = matched.filter(x => x.m.score >= t);
-  const below = matched.filter(x => x.m.score < t);
-
+  _clientCtx = { id, tab: (_clientCtx.id === id ? _clientCtx.tab : 0) };
   showModal({
     title: c.name,
-    body: `<div class="stack">
-      ${c.phone||c.email||c.notes ? `<div class="group">
-        ${c.phone?`<div>${esc(c.phone)}</div>`:''}
-        ${c.email?`<div class="muted">${esc(c.email)}</div>`:''}
-        ${c.notes?`<div style="margin-top:8px">${esc(c.notes)}</div>`:''}
-      </div>`:''}
-      <div class="group">
-        <h3>Buying criteria</h3>
-        <div style="line-height:1.7;">${criteriaDetail(c)}</div>
+    body: `
+      <div class="ctabs" id="ctabs">
+        ${CLIENT_TABS.map((t,i)=>`<button class="ctab ${i===_clientCtx.tab?'on':''}" onclick="switchClientTab(${i})">${t}</button>`).join('')}
       </div>
-      <button class="btn ghost full" onclick="openClientIntel('${c.id}')">🧠 Persona &amp; AI screening</button>
-      ${c.personaSummary ? `<div class="summary-box"><div class="sb-head"><span class="sb-title">Persona (AI)</span></div><div class="sb-body">${mdLite(c.personaSummary.text)}</div></div>` : ''}
-      <div>
-        <h3 style="margin:0 0 8px; font-size:15px">Matches (≥ ${t}%) — ${above.length}</h3>
-        ${above.map(x => listingMiniRow(x.l, x.m.score, c.id, t)).join('') || '<div class="muted">No listings above threshold yet.</div>'}
-        ${below.length ? `<details style="margin-top:14px">
-          <summary>Below threshold (${below.length})</summary>
-          <div style="margin-top:8px">${below.map(x => listingMiniRow(x.l, x.m.score, c.id, t)).join('')}</div>
-        </details>` : ''}
-      </div>
-    </div>`,
+      <div class="ctab-panel-wrap" id="ctab-panel">${renderClientTabPanel(id, _clientCtx.tab)}</div>
+    `,
     footer: `
       <button class="btn ghost" onclick="deleteClient('${c.id}')">Delete</button>
       <div style="flex:1"></div>
-      <button class="btn ghost" onclick="closeModal()">Close</button>
       <button class="btn" onclick="editClient('${c.id}')">Edit</button>
     `
   });
+  setTimeout(attachClientSwipe, 60);
+}
+function openClientAt(id, tab) { _clientCtx = { id, tab }; openClient(id); }
+
+function switchClientTab(i) {
+  _clientCtx.tab = i;
+  const wrap = $('#ctab-panel');
+  if (wrap) wrap.innerHTML = renderClientTabPanel(_clientCtx.id, i);
+  document.querySelectorAll('#ctabs .ctab').forEach((b, idx) => b.classList.toggle('on', idx === i));
+}
+function attachClientSwipe() {
+  const wrap = $('#ctab-panel');
+  if (!wrap) return;
+  let x0=null, y0=null, dx=0, dy=0;
+  wrap.addEventListener('touchstart', e => { const t=e.touches[0]; x0=t.clientX; y0=t.clientY; dx=0; dy=0; }, {passive:true});
+  wrap.addEventListener('touchmove', e => { if(x0==null) return; const t=e.touches[0]; dx=t.clientX-x0; dy=t.clientY-y0; }, {passive:true});
+  wrap.addEventListener('touchend', () => {
+    if (x0==null) return;
+    if (Math.abs(dx) > 55 && Math.abs(dx) > Math.abs(dy)*1.4) {
+      if (dx < 0) switchClientTab(Math.min(CLIENT_TABS.length-1, _clientCtx.tab+1));
+      else switchClientTab(Math.max(0, _clientCtx.tab-1));
+    }
+    x0=y0=null;
+  }, {passive:true});
 }
 
-function listingMiniRow(l, score, clientId, threshold) {
-  const cli = state.clients.find(c => c.id === clientId);
-  const cf = computeCashflow(l, { withRental: cli?.criteria?.cashflowWithRental, client: cli });
-  const showing = (l.showings||[]).find(s => s.clientId === clientId);
-  return `<div class="feed-item" style="margin:0 -14px; padding:10px 14px; border-bottom:1px solid var(--border)" onclick="closeModal(); setTimeout(()=>editListing('${l.id}'), 60)">
-    <div class="body">
-      <h3 style="font-size:14px">${esc(l.address || 'Untitled')}</h3>
-      <div class="muted smaller">${fmt$short(l.price)} · ${l.beds||'—'}b/${l.baths||'—'}ba · CF ${fmtMoneySigned(cf.netMonthly)}/mo</div>
-      ${showing?.notes ? `<div class="muted smaller" style="margin-top:3px">📝 ${esc(showing.notes.slice(0,80))}${showing.notes.length>80?'…':''}</div>` : ''}
+function renderClientTabPanel(id, tab) {
+  const c = state.clients.find(x => x.id === id);
+  if (!c) return '';
+  if (tab === 0) return renderClientOverview(c);
+  if (tab === 1) return renderClientPersona(c);
+  return renderClientListings(c);
+}
+
+function renderClientOverview(c) {
+  const assigned = state.listings.filter(l => (l.assignedClientIds||[]).includes(c.id));
+  const screened = assigned.filter(l => c.screenings && c.screenings[l.id]).length;
+  return `<div class="stack">
+    ${c.phone||c.email||c.notes ? `<div class="group">
+      ${c.phone?`<div>${esc(c.phone)}</div>`:''}
+      ${c.email?`<div class="muted">${esc(c.email)}</div>`:''}
+      ${c.notes?`<div style="margin-top:8px">${esc(c.notes)}</div>`:''}
+    </div>`:''}
+    <div class="group">
+      <h3>Buying criteria</h3>
+      <div style="line-height:1.7;">${criteriaDetail(c)}</div>
     </div>
-    <div class="score ${scoreClass(score, threshold)}">${score}%</div>
+    <div class="muted smaller" style="text-align:center">${assigned.length} listing${assigned.length===1?'':'s'} · ${screened} screened${c.personaSummary?' · persona ✓':''}</div>
+  </div>`;
+}
+
+function renderClientPersona(c) {
+  _notesCtx = { persona: { kind:'client', clientId: c.id, _title:'Persona notes' } };
+  return `<div class="stack">
+    <div class="group-sub">Add a persona note each time you talk to ${esc(c.name)}, then generate a structured summary of their life stage and what they want.</div>
+    ${notesSectionHtml('persona', 'Persona notes')}
+  </div>`;
+}
+
+function renderClientListings(c) {
+  const assigned = state.listings.filter(l => (l.assignedClientIds||[]).includes(c.id));
+  // Sort by blended score, highest first
+  assigned.sort((a,b) => effectiveScore(c,b).score - effectiveScore(c,a).score);
+  return `<div class="stack">
+    <div class="add-listing-bar">
+      <button class="btn full" onclick="openClientListingPicker('${c.id}')">＋ Add listing</button>
+    </div>
+    ${assigned.length ? assigned.map(l => clientListingCard(c, l)).join('') : '<div class="empty" style="padding:32px 8px"><p>No listings added yet. Tap <b>Add listing</b> to search and add.</p></div>'}
+  </div>`;
+}
+
+function clientListingCard(c, l) {
+  const eff = effectiveScore(c, l);
+  const t = c.criteria?.matchThreshold || 70;
+  const result = c.screenings && c.screenings[l.id];
+  const specs = [];
+  specs.push(`💰 ${fmt$short(l.price)}`);
+  if (l.beds!=null || l.dens) specs.push(`🛏 ${bedsLabel(l)}`);
+  if (l.baths!=null || l.washrooms) specs.push(`🛁 ${bathsLabel(l)}`);
+  if (l.sizeSqft) specs.push(`📐 ${(+l.sizeSqft).toLocaleString()}sf`);
+  if (l.parkingSpaces!=null) specs.push(`🚗 ${l.parkingSpaces}`);
+  return `<div class="cl-card" onclick="openClientListingDetail('${c.id}','${l.id}')">
+    <div class="cl-head">
+      <div class="cl-addr">${esc(l.address||'Untitled')}<div class="muted smaller" style="font-weight:400">${esc(l.city||'')}${l.propertyType?' · '+esc(l.propertyType):''}</div></div>
+      <div class="score ${scoreClass(eff.score, t)}" title="criteria ${eff.crit}%${eff.ai!=null?', AI '+eff.ai+'%':''}">${eff.score}%</div>
+    </div>
+    <div class="cl-meta">${specs.map(s=>`<span>${s}</span>`).join('')}</div>
+    ${result ? `<div class="cl-sum"><span class="fit-badge fit-${result.fit}">${result.fit}</span>${esc(firstSentence(result.analysis))}</div>` : `<div class="cl-sum">Not screened yet — tap to screen</div>`}
   </div>`;
 }
 
@@ -1790,6 +2045,11 @@ function saveClientForm(id, isNew) {
     email: $('#f-email').value.trim(),
     notes: $('#f-notes').value.trim(),
     mortgage,
+    // Preserve AI/intel data that isn't part of this form
+    personaNotes: existing?.personaNotes || [],
+    personaSummary: existing?.personaSummary || null,
+    screenings: existing?.screenings || {},
+    showings: existing?.showings || {},
     createdAt: isNew ? new Date().toISOString() : (existing?.createdAt || new Date().toISOString()),
     criteria: {
       locations, propertyTypes,
@@ -1815,9 +2075,9 @@ function saveClientForm(id, isNew) {
 function deleteClient(id) {
   if (!confirm('Delete this client?')) return;
   state.clients = state.clients.filter(c => c.id !== id);
+  // Persona/screenings/showings live on the client object, so they're removed with it.
   state.listings.forEach(l => {
     if (l.assignedClientIds) l.assignedClientIds = l.assignedClientIds.filter(x => x !== id);
-    if (l.showings) l.showings = l.showings.filter(s => s.clientId !== id);
   });
   save(); closeModal(); render(); toast('Deleted');
 }
@@ -1848,16 +2108,18 @@ function editListing(id) {
   const l = id ? structuredClone(state.listings.find(x=>x.id===id)) : {
     id: uid(), realmasterUrl:'',
     address:'', city:'', neighbourhood:'', community:'', building:'', propertyType:'Condo',
-    price:null, beds:null, baths:null, sizeSqft:null,
+    price:null, beds:null, dens:null, baths:null, washrooms:null, sizeSqft:null,
     maintenanceFee:0, propertyTax:0, estRentalIncome:0,
     quickBrief:'', status:'to_show',
     mlsNumber:'', builder:'',
     parkingSpaces:null, lockers:null,
+    occupancy:'', showingInstructions:'', offerDetails:'', closing:'', reasonToSell:'', listingAgent:'', usableSqft:null,
     rawPaste:'',
-    assignedClientIds:[], showings:[],
+    assignedClientIds:[],
     createdAt: new Date().toISOString(),
   };
   const types = ['Detached','Semi-Detached','Townhouse','Condo','Condo Townhouse','Multi-Plex'];
+  window._editListingId = l.id;
   const matches = state.clients.map(c => ({ c, m: computeMatchScore(l, c) })).sort((a,b)=>b.m.score-a.m.score);
 
   const clientChecks = state.clients.map(c =>
@@ -1873,6 +2135,18 @@ function editListing(id) {
         <div class="muted smaller" style="margin-top:4px">Tapping the link on phone opens whichever app owns the listing.</div>
       </div>
       <div class="field"><label>Address</label><input id="f-laddr" value="${esc(l.address||'')}" placeholder="123 Main St, #405"></div>
+
+      <div class="group">
+        <h3>Agent intel</h3>
+        <div class="group-sub">The things you actually need before booking a showing or advising a client. ✦ Re-parse with AI (below) fills these from the pasted listing text.</div>
+        <div class="field"><label>Occupancy</label><input id="f-loccupancy" value="${esc(l.occupancy||'')}" placeholder="Vacant / Owner-occupied / Tenant-occupied"></div>
+        <div class="field"><label>Showing info &amp; instructions</label><textarea id="f-lshowing" placeholder="How to book & access — Broker Bay / ShowingTime / call LA, notice required, lockbox/appointment, accompany, hours, pets, shoes off…">${esc(l.showingInstructions||'')}</textarea></div>
+        <div class="field"><label>Offer details</label><input id="f-loffer" value="${esc(l.offerDetails||'')}" placeholder="Offer date / holdback / any time"></div>
+        <div class="field"><label>Closing</label><input id="f-lclosing" value="${esc(l.closing||'')}" placeholder="Seller's timeline — flexible / specific date / quick"></div>
+        <div class="field"><label>Reason to sell <span class="muted smaller">(motivation / urgency)</span></label><textarea id="f-lreason" placeholder="e.g. listed 90+ days with 2 price cuts — eager; or bought higher in 2022, possible stress">${esc(l.reasonToSell||'')}</textarea></div>
+        <div class="field"><label>Listing agent contact</label><input id="f-lagent" value="${esc(l.listingAgent||'')}" placeholder="Name · brokerage · phone"></div>
+      </div>
+
       <div class="row2">
         <div class="field"><label>City</label><input id="f-lcity" value="${esc(l.city||'')}" placeholder="Toronto"></div>
         <div class="field"><label>Property type</label>
@@ -1889,11 +2163,20 @@ function editListing(id) {
       </div>
       <div class="row2">
         <div class="field"><label>Price</label><input id="f-lprice" type="number" inputmode="numeric" value="${l.price??''}" placeholder="$" oninput="updateCashflowPreview()"></div>
-        <div class="field"><label>Size (sqft)</label><input id="f-lsize" type="number" inputmode="numeric" value="${l.sizeSqft??''}" oninput="updateCashflowPreview()"></div>
+        <div class="field"><label>Size — stated (sqft)</label><input id="f-lsize" type="number" inputmode="numeric" value="${l.sizeSqft??''}" oninput="updateCashflowPreview(); updateUsableHint()"></div>
+      </div>
+      <div class="field">
+        <label>Usable sqft <span class="muted smaller">(sum of room areas)</span></label>
+        <input id="f-lusable" type="number" inputmode="numeric" value="${l.usableSqft??''}" placeholder="auto-filled by AI re-parse" oninput="updateUsableHint()">
+        <div id="f-usable-hint" class="muted smaller" style="margin-top:4px"></div>
       </div>
       <div class="row2">
-        <div class="field"><label>Beds</label><input id="f-lbeds" type="number" step="0.5" inputmode="decimal" value="${l.beds??''}"></div>
-        <div class="field"><label>Baths</label><input id="f-lbaths" type="number" step="0.5" inputmode="decimal" value="${l.baths??''}"></div>
+        <div class="field"><label>Bedrooms</label><input id="f-lbeds" type="number" min="0" inputmode="numeric" value="${l.beds??''}"></div>
+        <div class="field"><label>Dens</label><input id="f-ldens" type="number" min="0" inputmode="numeric" value="${l.dens??''}" placeholder="0"></div>
+      </div>
+      <div class="row2">
+        <div class="field"><label>Full baths <span class="muted smaller">(with tub/shower)</span></label><input id="f-lbaths" type="number" min="0" inputmode="numeric" value="${l.baths??''}"></div>
+        <div class="field"><label>Washrooms <span class="muted smaller">(powder, no tub)</span></label><input id="f-lwash" type="number" min="0" inputmode="numeric" value="${l.washrooms??''}" placeholder="0"></div>
       </div>
       <div class="row2">
         <div class="field"><label>Maint / mo</label><input id="f-lmaint" type="number" inputmode="numeric" value="${l.maintenanceFee??0}" placeholder="$" oninput="updateCashflowPreview()"></div>
@@ -1911,8 +2194,12 @@ function editListing(id) {
 
       <details ${l.rawPaste?'open':''} style="padding:12px 14px">
         <summary>Original pasted listing info${l.rawPaste?' ✓':''}</summary>
-        <div class="muted smaller" style="margin:8px 0">Saved verbatim for future reference. Smart Paste fills this automatically; you can also paste/edit here.</div>
+        <div class="muted smaller" style="margin:8px 0">Saved verbatim for future reference. Edit it here, then re-parse to update the fields above.</div>
         <textarea id="f-lraw" rows="6" placeholder="The full listing text you pasted…">${esc(l.rawPaste||'')}</textarea>
+        <div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:10px">
+          <button type="button" class="btn ghost small" onclick="reparseQuick()">↻ Re-parse</button>
+          <button type="button" class="btn small" id="reparse-ai-btn" onclick="reparseAI()">✦ Re-parse with AI</button>
+        </div>
       </details>
 
       <div class="field"><label>Status</label>
@@ -1936,30 +2223,7 @@ function editListing(id) {
       ${state.clients.length ? `<div class="field">
         <label>Assigned clients</label>
         <div class="chip-row">${clientChecks}</div>
-      </div>` : ''}
-
-      ${(l.assignedClientIds||[]).length && !isNew ? `<div class="group">
-        <h3>Post-showing notes</h3>
-        ${(l.assignedClientIds||[]).map(cid => {
-          const cli = state.clients.find(c=>c.id===cid);
-          if (!cli) return '';
-          const sh = (l.showings||[]).find(s=>s.clientId===cid) || {};
-          return `<details ${sh.notes||sh.reaction?'open':''} style="background:var(--bg-soft)">
-            <summary>${esc(cli.name)}${sh.reaction?' — '+esc(sh.reaction):''}</summary>
-            <div style="margin-top:8px">
-              <div class="row2">
-                <div class="field"><label>Date</label><input data-show-date="${cid}" type="date" value="${sh.showingDate||''}"></div>
-                <div class="field"><label>Reaction</label>
-                  <select data-show-reaction="${cid}">
-                    <option value="">—</option>
-                    ${['loved','liked','meh','disliked'].map(r=>`<option value="${r}" ${sh.reaction===r?'selected':''}>${r}</option>`).join('')}
-                  </select>
-                </div>
-              </div>
-              <div class="field"><label>Notes</label><textarea data-show-notes="${cid}" placeholder="Post-showing thoughts, comments, concerns">${esc(sh.notes||'')}</textarea></div>
-            </div>
-          </details>`;
-        }).join('')}
+        <div class="muted smaller" style="margin-top:6px">Post-showing notes now live per client — open the client → Listings → tap this listing.</div>
       </div>` : ''}
     </div>`,
     footer: `
@@ -1969,22 +2233,13 @@ function editListing(id) {
       <button class="btn" onclick="saveListingForm('${l.id}', ${isNew})">Save</button>
     `
   });
+  setTimeout(updateUsableHint, 50);
 }
 
 function saveListingForm(id, isNew) {
   const address = $('#f-laddr').value.trim();
   if (!address) { toast('Address required'); return; }
   const assignedClientIds = Array.from(document.querySelectorAll('[data-cid]')).filter(cb=>cb.checked).map(cb=>cb.dataset.cid);
-  const showings = [];
-  assignedClientIds.forEach(cid => {
-    const dateEl = document.querySelector(`[data-show-date="${cid}"]`);
-    const reacEl = document.querySelector(`[data-show-reaction="${cid}"]`);
-    const noteEl = document.querySelector(`[data-show-notes="${cid}"]`);
-    if (dateEl || reacEl || noteEl) {
-      const sh = { clientId: cid, showingDate: dateEl?.value || '', reaction: reacEl?.value || '', notes: noteEl?.value.trim() || '' };
-      if (sh.showingDate || sh.reaction || sh.notes) showings.push(sh);
-    }
-  });
   const existing = state.listings.find(x => x.id === id);
   const status = document.querySelector('#f-lstatus-seg button.on')?.dataset.status || 'to_show';
   const l = {
@@ -1996,7 +2251,9 @@ function saveListingForm(id, isNew) {
     propertyType: $('#f-ltype').value,
     price: numOrNull($('#f-lprice').value),
     beds: numOrNull($('#f-lbeds').value),
+    dens: numOrNull($('#f-ldens').value),
     baths: numOrNull($('#f-lbaths').value),
+    washrooms: numOrNull($('#f-lwash').value),
     sizeSqft: numOrNull($('#f-lsize').value),
     maintenanceFee: numOrNull($('#f-lmaint').value) || 0,
     propertyTax: numOrNull($('#f-ltax').value) || 0,
@@ -2007,7 +2264,14 @@ function saveListingForm(id, isNew) {
     builder: $('#f-lbuilder').value.trim(),
     parkingSpaces: numOrNull($('#f-lparking').value),
     lockers: numOrNull($('#f-llocker').value),
-    status, assignedClientIds, showings,
+    occupancy: $('#f-loccupancy')?.value.trim() || '',
+    showingInstructions: $('#f-lshowing')?.value.trim() || '',
+    offerDetails: $('#f-loffer')?.value.trim() || '',
+    closing: $('#f-lclosing')?.value.trim() || '',
+    reasonToSell: $('#f-lreason')?.value.trim() || '',
+    listingAgent: $('#f-lagent')?.value.trim() || '',
+    usableSqft: numOrNull($('#f-lusable')?.value),
+    status, assignedClientIds,
     createdAt: isNew ? new Date().toISOString() : (existing?.createdAt || new Date().toISOString()),
   };
   if (isNew) state.listings.push(l);
@@ -2020,6 +2284,11 @@ function deleteListing(id) {
   if (!confirm('Delete this listing?')) return;
   state.listings = state.listings.filter(l => l.id !== id);
   compareSelection = compareSelection.filter(x => x !== id);
+  // Clean per-client screenings/showings tied to this listing
+  state.clients.forEach(c => {
+    if (c.screenings) delete c.screenings[id];
+    if (c.showings) delete c.showings[id];
+  });
   save(); closeModal(); render(); toast('Deleted');
 }
 
@@ -2043,12 +2312,15 @@ function openSmartPaste(listingId) {
     type: $('#f-ltype')?.value || '',
     price: $('#f-lprice')?.value || '',
     beds: $('#f-lbeds')?.value || '',
+    dens: $('#f-ldens')?.value || '',
     baths: $('#f-lbaths')?.value || '',
+    wash: $('#f-lwash')?.value || '',
     size: $('#f-lsize')?.value || '',
     maint: $('#f-lmaint')?.value || '',
     tax: $('#f-ltax')?.value || '',
     rent: $('#f-lrent')?.value || '',
     brief: $('#f-lbrief')?.value || '',
+    showinst: $('#f-lshowing')?.value || '',
     mls: $('#f-lmls')?.value || '',
     builder: $('#f-lbuilder')?.value || '',
     parking: $('#f-lparking')?.value || '',
@@ -2104,12 +2376,15 @@ function reopenListingEdit() {
     set('#f-ltype', stash.cur.type);
     set('#f-lprice', stash.cur.price);
     set('#f-lbeds', stash.cur.beds);
+    set('#f-ldens', stash.cur.dens);
     set('#f-lbaths', stash.cur.baths);
+    set('#f-lwash', stash.cur.wash);
     set('#f-lsize', stash.cur.size);
     set('#f-lmaint', stash.cur.maint);
     set('#f-ltax', stash.cur.tax);
     set('#f-lrent', stash.cur.rent);
     set('#f-lbrief', stash.cur.brief);
+    set('#f-lshowing', stash.cur.showinst);
     set('#f-lmls', stash.cur.mls);
     set('#f-lbuilder', stash.cur.builder);
     set('#f-lparking', stash.cur.parking);
@@ -2145,13 +2420,20 @@ function parseListingText(text, url) {
   });
   if (best) out.price = best;
 
-  const bedM = oneLine.match(/(\d+(?:\s?\+\s?\d+)?)\s*(?:beds?|bdrm|bdrms|bedroom|bedrooms|br\b|bd\b)/i);
-  if (bedM) {
-    const v = bedM[1].replace(/\s/g, '');
-    out.beds = v.includes('+') ? v.split('+').reduce((a,b)=>+a + +b, 0) : +v;
-  }
-  const bathM = oneLine.match(/(\d+(?:\.\d+)?)\s*(?:baths?|bathroom|bathrooms|ba\b)/i);
-  if (bathM) out.baths = +bathM[1];
+  // Bedrooms + dens: "3+1 beds" → beds 3, dens 1; "3 bed" → beds 3, dens 0
+  const bedM = oneLine.match(/(\d+)\s*(?:\+\s*(\d+))?\s*(?:beds?|bdrm|bdrms|bedroom|bedrooms|br\b|bd\b)/i);
+  if (bedM) { out.beds = +bedM[1]; out.dens = bedM[2] ? +bedM[2] : 0; }
+  // Textual den ("+ den", "plus den", "N den")
+  const denM = oneLine.match(/(\d+)\s*dens?\b/i);
+  if (denM) out.dens = +denM[1];
+  else if ((out.dens == null || out.dens === 0) && /\+\s*den\b|\bplus\s+den\b/i.test(oneLine)) out.dens = 1;
+
+  // Full baths + washrooms: "2.5 baths" → baths 2, washrooms 1; "3 full baths" → baths 3, washrooms 0
+  const bathM = oneLine.match(/(\d+)(\.5)?\s*(?:full\s+|3[\-\s]?(?:pc|piece)\s+|4[\-\s]?(?:pc|piece)\s+)?(?:baths?|bathroom|bathrooms|ba\b)/i);
+  if (bathM) { out.baths = +bathM[1]; out.washrooms = bathM[2] ? 1 : 0; }
+  // Explicit washroom / powder / 2-piece counts override
+  const washM = oneLine.match(/(\d+)\s*(?:washrooms?|powder\s?rooms?|half[\-\s]?baths?|2[\-\s]?(?:pc|piece))/i);
+  if (washM) out.washrooms = +washM[1];
 
   const sizeM = oneLine.match(/(\d{1,3}(?:,\d{3})+|\d{3,5})\s*(?:-\s*(?:\d{1,3}(?:,\d{3})+|\d{3,5}))?\s*(?:sq\.?\s?ft|sqft|sf\b|square\s?feet?)/i);
   if (sizeM) out.sizeSqft = parseInt(sizeM[1].replace(/,/g, ''));
@@ -2255,6 +2537,16 @@ function parseListingText(text, url) {
     }
   }
 
+  // Showing info — best-effort: grab sentences/lines mentioning booking & access keywords.
+  const showRe = /(showing|broker\s?bay|brokerbay|showingtime|lock\s?box|\blbx?\b|by\s+appointment|appointment\s+(?:only|required)|\d+\s*(?:h(?:ou)?rs?|hour)\s+notice|24\s?hr|list(?:ing)?\s+(?:sales(?:person)?|agent)\s+(?:to\s+)?accompany|remove\s+(?:your\s+)?shoes|easy\s+to\s+show|do\s+not\s+(?:use|book))/i;
+  const segs = flat.split(/\n|(?<=[.!?])\s+/).map(s => s.trim()).filter(s => s.length > 3 && showRe.test(s));
+  if (segs.length) {
+    // De-dupe and cap length
+    const seen = new Set(); const picked = [];
+    for (const s of segs) { const k = s.toLowerCase(); if (!seen.has(k)) { seen.add(k); picked.push(s); } if (picked.length >= 5) break; }
+    out.showingInstructions = picked.join(' ').slice(0, 400);
+  }
+
   return out;
 }
 
@@ -2269,8 +2561,8 @@ function updateSmartPastePreview() {
   if (parsed.address) lines.push(`Addr <b>${esc(parsed.address)}</b>`);
   if (parsed.city) lines.push(`City <b>${esc(parsed.city)}</b>`);
   if (parsed.propertyType) lines.push(`Type <b>${esc(parsed.propertyType)}</b>`);
-  if (parsed.beds != null) lines.push(`Beds <b>${parsed.beds}</b>`);
-  if (parsed.baths != null) lines.push(`Baths <b>${parsed.baths}</b>`);
+  if (parsed.beds != null) lines.push(`Beds <b>${parsed.beds}${parsed.dens?'+'+parsed.dens:''}</b>`);
+  if (parsed.baths != null) lines.push(`Baths <b>${parsed.baths}${parsed.washrooms?'+'+parsed.washrooms:''}</b>`);
   if (parsed.sizeSqft) lines.push(`<b>${parsed.sizeSqft.toLocaleString()} sf</b>`);
   if (parsed.maintenanceFee) lines.push(`Maint <b>${fmt$(parsed.maintenanceFee)}/mo</b>`);
   if (parsed.propertyTax) lines.push(`Tax <b>${fmt$(parsed.propertyTax)}/yr</b>`);
@@ -2279,6 +2571,7 @@ function updateSmartPastePreview() {
   if (parsed.builder) lines.push(`Builder <b>${esc(parsed.builder)}</b>`);
   if (parsed.parkingSpaces != null) lines.push(`Parking <b>${parsed.parkingSpaces}</b>`);
   if (parsed.lockers != null) lines.push(`Locker <b>${parsed.lockers > 0 ? (parsed.lockers === 1 ? 'Yes' : parsed.lockers) : 'No'}</b>`);
+  if (parsed.showingInstructions) lines.push(`Showing <b>✓</b>`);
   preview.innerHTML = lines.length ? '<b>Detected:</b> ' + lines.join(' · ') : 'No fields detected yet.';
 }
 
@@ -2286,8 +2579,9 @@ function applySmartPaste() {
   const text = $('#sp-text')?.value || '';
   const url = $('#sp-url')?.value || '';
   if (!text.trim() && !url.trim()) { toast('Paste something first'); return; }
-  const parsed = parseListingText(text, url);
   const stash = window._editStash || { listingId:null, cur:{}, assigned:[] };
+  const ctx = gatherParseContext({ listingId: stash.listingId, neighbourhood: stash.cur.nbhd, community: stash.cur.comm, building: stash.cur.build, city: stash.cur.city, builder: stash.cur.builder });
+  const parsed = parseListingText(text + (ctx ? '\n\n' + ctx : ''), url);
   const c = stash.cur;
   if (parsed.url) c.url = parsed.url;
   if (parsed.address) c.addr = parsed.address;
@@ -2295,7 +2589,10 @@ function applySmartPaste() {
   if (parsed.propertyType) c.type = parsed.propertyType;
   if (parsed.price) c.price = String(parsed.price);
   if (parsed.beds != null) c.beds = String(parsed.beds);
+  if (parsed.dens != null) c.dens = String(parsed.dens);
   if (parsed.baths != null) c.baths = String(parsed.baths);
+  if (parsed.washrooms != null) c.wash = String(parsed.washrooms);
+  if (parsed.showingInstructions) c.showinst = parsed.showingInstructions;
   if (parsed.sizeSqft) c.size = String(parsed.sizeSqft);
   if (parsed.maintenanceFee) c.maint = String(parsed.maintenanceFee);
   if (parsed.propertyTax) c.tax = String(parsed.propertyTax);
@@ -2319,10 +2616,11 @@ async function applyAISmartPaste() {
   const btn = $('#sp-ai-btn');
   if (btn) { btn.textContent = 'Parsing…'; btn.classList.add('gen-btn-busy'); }
   try {
-    const { system, user } = buildExtractionPrompt(text);
-    const out = await callClaude(system, user, { maxTokens: 800 });
-    const p = parseExtraction(out);
     const stash = window._editStash || { listingId:null, cur:{}, assigned:[] };
+    const ctx = gatherParseContext({ listingId: stash.listingId, neighbourhood: stash.cur.nbhd, community: stash.cur.comm, building: stash.cur.build, city: stash.cur.city, builder: stash.cur.builder });
+    const { system, user } = buildExtractionPrompt(text, ctx);
+    const out = await callClaude(system, user, { maxTokens: 900 });
+    const p = parseExtraction(out);
     const c = stash.cur;
     const setIf = (k, v) => { if (v !== null && v !== undefined && String(v).trim() !== '') c[k] = String(v).trim(); };
     if (url.trim()) c.url = url.trim();
@@ -2331,6 +2629,9 @@ async function applyAISmartPaste() {
     setIf('nbhd', p.neighbourhood); setIf('comm', p.community); setIf('build', p.building);
     setIf('type', p.propertyType);
     setIf('price', p.price); setIf('beds', p.beds); setIf('baths', p.baths); setIf('size', p.sizeSqft);
+    if (p.dens != null) c.dens = String(p.dens);
+    if (p.washrooms != null) c.wash = String(p.washrooms);
+    setIf('showinst', p.showingInstructions);
     setIf('maint', p.maintenanceFee); setIf('tax', p.propertyTax); setIf('rent', p.estRentalIncome);
     setIf('mls', p.mlsNumber); setIf('builder', p.builder);
     if (p.parkingSpaces !== null && p.parkingSpaces !== undefined) c.parking = String(p.parkingSpaces);
@@ -2366,8 +2667,8 @@ function briefListing(id, clientId) {
       ${usingCustom?`<div class="muted smaller" style="margin-top:2px">Cashflow using ${esc(client.name)}'s mortgage assumptions</div>`:''}
       <div class="price-big">${fmt$(l.price)}</div>
       <div class="specs-grid">
-        <div class="stat"><div class="lbl">Bed / Bath</div><div class="val">${l.beds||'—'} / ${l.baths||'—'}</div></div>
-        <div class="stat"><div class="lbl">Size</div><div class="val">${l.sizeSqft ? (+l.sizeSqft).toLocaleString()+' sf' : '—'}</div></div>
+        <div class="stat"><div class="lbl">Bed (+den) / Bath (+powder)</div><div class="val">${bedsLabel(l)} / ${bathsLabel(l)}</div></div>
+        <div class="stat"><div class="lbl">Size — stated</div><div class="val">${l.sizeSqft ? (+l.sizeSqft).toLocaleString()+' sf' : '—'}${(l.usableSqft&&l.sizeSqft)?'<div class="muted smaller">usable '+(+l.usableSqft).toLocaleString()+' sf · '+(Math.round((l.usableSqft-l.sizeSqft)/l.sizeSqft*100)>=0?'+':'')+Math.round((l.usableSqft-l.sizeSqft)/l.sizeSqft*100)+'%</div>':(l.usableSqft?'<div class="muted smaller">usable '+(+l.usableSqft).toLocaleString()+' sf</div>':'')}</div></div>
         <div class="stat"><div class="lbl">Parking / Locker</div><div class="val">${l.parkingSpaces!=null?l.parkingSpaces:'—'} / ${l.lockers!=null?(l.lockers>0?l.lockers:'none'):'—'}</div></div>
         <div class="stat"><div class="lbl">Price / sf</div><div class="val">${fmt$psf(pricePsf(l))}</div></div>
         <div class="stat"><div class="lbl">Maint / mo</div><div class="val">${fmt$(l.maintenanceFee)}${maintPsf(l)?'<div class="muted smaller">'+fmt$psfm(maintPsf(l))+'</div>':''}</div></div>
@@ -2377,6 +2678,15 @@ function briefListing(id, clientId) {
         <div class="stat"><div class="lbl">CF w/o rent</div><div class="val" style="color:${cfNo.netMonthly>=0?'var(--good)':'var(--bad)'}">${fmtMoneySigned(cfNo.netMonthly)}</div></div>
         <div class="stat"><div class="lbl">CF w/ rent</div><div class="val" style="color:${cfYes.netMonthly>=0?'var(--good)':'var(--bad)'}">${fmtMoneySigned(cfYes.netMonthly)}</div></div>
       </div>
+      ${(l.occupancy||l.showingInstructions||l.offerDetails||l.closing||l.reasonToSell||l.listingAgent) ? `<div class="group" style="margin-top:14px">
+        <h3>Agent intel</h3>
+        ${l.occupancy?`<div style="margin-bottom:6px"><b>Occupancy</b> · ${esc(l.occupancy)}</div>`:''}
+        ${l.showingInstructions?`<div style="margin-bottom:6px"><b>Showing</b> · ${esc(l.showingInstructions)}</div>`:''}
+        ${l.offerDetails?`<div style="margin-bottom:6px"><b>Offers</b> · ${esc(l.offerDetails)}</div>`:''}
+        ${l.closing?`<div style="margin-bottom:6px"><b>Closing</b> · ${esc(l.closing)}</div>`:''}
+        ${l.reasonToSell?`<div style="margin-bottom:6px"><b>Reason to sell</b> · ${esc(l.reasonToSell)}</div>`:''}
+        ${l.listingAgent?`<div><b>Listing agent</b> · ${esc(l.listingAgent)}</div>`:''}
+      </div>` : ''}
       ${l.quickBrief ? `<div class="talking"><b>Talking points</b><br>${esc(l.quickBrief)}</div>` : ''}
       ${l.propertySummary ? `<div class="summary-box"><div class="sb-head"><span class="sb-title">Property intel (AI)</span></div><div class="sb-body">${mdLite(l.propertySummary.text)}</div></div>` : ''}
       <div style="margin-top:14px"><button class="btn ghost full" onclick="openListingIntel('${l.id}')">📝 Notes &amp; AI summaries</button></div>
@@ -2392,58 +2702,126 @@ function briefListing(id, clientId) {
   });
 }
 
-// ---- Client intel (persona + screening) ------------
-function openClientIntel(clientId) {
+// ---- Add-listing search picker ---------------------
+function openClientListingPicker(clientId) {
   const c = state.clients.find(x => x.id === clientId);
   if (!c) return;
-  _notesCtx = { persona: { kind:'client', clientId: c.id, _title:'Persona notes' } };
-  const assigned = state.listings.filter(l => (l.assignedClientIds||[]).includes(c.id));
-  const screeningSection = `<div class="group">
-    <h3>Listing screening (AI)</h3>
-    <div class="group-sub">Screen runs everything known about ${esc(c.name)} (criteria, persona summary) against everything known about each listing (property + neighbourhood + community + city + developer intel) to produce a fit verdict, score, and analysis.</div>
-    ${assigned.length ? assigned.map(l => renderScreenCard(c, l)).join('') : '<div class="muted smaller">No listings assigned to this client yet. Open a listing → Edit → tick this client under "Assigned clients".</div>'}
-  </div>`;
   showModal({
-    title: 'Persona & Screening',
-    onBack: `openClient('${c.id}')`,
+    title: 'Add listings',
+    onBack: `openClientAt('${clientId}', 2)`,
     body: `<div class="stack">
-      <div class="group-sub">${esc(c.name)} — add a persona note each time you talk, then generate a structured summary of their life stage and what they want.</div>
-      ${notesSectionHtml('persona', 'Persona notes')}
-      ${screeningSection}
+      <div class="group-sub">Search your listings and tap to add them to ${esc(c.name)}. Added listings appear under this client with their screening score.</div>
+      <input id="picker-q" placeholder="Search address, city, MLS, building…" oninput="renderPickerResults('${clientId}')" autofocus>
+      <div id="picker-results">${renderPickerResultsHtml(clientId, '')}</div>
     </div>`,
-    footer: `<button class="btn ghost full" onclick="openClient('${c.id}')">Back</button>`
+    footer: `<button class="btn full" onclick="openClientAt('${clientId}', 2)">Done</button>`
   });
+  setTimeout(()=>$('#picker-q')?.focus(), 80);
+}
+function renderPickerResultsHtml(clientId, q) {
+  const ql = (q||'').trim().toLowerCase();
+  let list = [...state.listings].sort((a,b)=>(b.createdAt||'').localeCompare(a.createdAt||''));
+  if (ql) list = list.filter(l => [l.address,l.city,l.mlsNumber,l.neighbourhood,l.community,l.building,l.builder].some(v => (v||'').toLowerCase().includes(ql)));
+  if (!list.length) return '<div class="muted smaller" style="padding:10px 0">No listings found. Add listings from the Listings tab first.</div>';
+  return list.map(l => {
+    const assigned = (l.assignedClientIds||[]).includes(clientId);
+    return `<div class="feed-item" style="margin:0; cursor:pointer" onclick="togglePickListing('${clientId}','${l.id}')">
+      <div class="body">
+        <h3 style="font-size:14px">${esc(l.address||'Untitled')}</h3>
+        <div class="muted smaller">${fmt$short(l.price)} · ${esc(l.city||'')}${l.mlsNumber?' · '+esc(l.mlsNumber):''}</div>
+      </div>
+      <button class="btn ${assigned?'ghost':''} small" style="pointer-events:none">${assigned?'✓ Added':'Add'}</button>
+    </div>`;
+  }).join('');
+}
+function renderPickerResults(clientId) {
+  const q = $('#picker-q')?.value || '';
+  const el = $('#picker-results');
+  if (el) el.innerHTML = renderPickerResultsHtml(clientId, q);
+}
+function togglePickListing(clientId, listingId) {
+  const l = state.listings.find(x => x.id === listingId);
+  if (!l) return;
+  if (!l.assignedClientIds) l.assignedClientIds = [];
+  const i = l.assignedClientIds.indexOf(clientId);
+  if (i >= 0) l.assignedClientIds.splice(i, 1); else l.assignedClientIds.push(clientId);
+  save();
+  renderPickerResults(clientId);
+  toast(i >= 0 ? 'Removed' : 'Added');
+}
+
+// ---- Client listing detail (screening + info) ------
+function openClientListingDetail(clientId, listingId) {
+  const c = state.clients.find(x => x.id === clientId);
+  const l = state.listings.find(x => x.id === listingId);
+  if (!c || !l) return;
+  const eff = effectiveScore(c, l);
+  const t = c.criteria?.matchThreshold || 70;
+  const result = c.screenings && c.screenings[l.id];
+  const busy = _screenBusy[clientId + ':' + listingId];
+  const cfYes = computeCashflow(l, { withRental: true, client: c });
+  const cfNo = computeCashflow(l, { withRental: false, client: c });
+  const refresh = `openClientListingDetail('${clientId}','${listingId}')`;
+  _notesCtx = { showing: { kind:'showing', clientId, listingId, _title:'Post-showing notes' } };
+  showModal({
+    title: l.address || 'Listing',
+    onBack: `openClientAt('${clientId}', 2)`,
+    body: `<div class="stack">
+      <div class="group">
+        <div style="display:flex; align-items:center; gap:12px">
+          <div style="flex:1">
+            <div style="font-size:26px; font-weight:800; letter-spacing:-0.01em" class="${scoreClass(eff.score,t)==='good'?'':''}">${eff.score}% match</div>
+            <div class="muted smaller">criteria ${eff.crit}%${eff.ai!=null?` · AI ${eff.ai}%`:' · AI not run'}</div>
+          </div>
+          ${result?`<span class="fit-badge fit-${result.fit}">${result.fit} fit</span>`:''}
+        </div>
+        <button class="btn full ${busy?'gen-btn-busy':''}" style="margin-top:12px" onclick="screenListing('${clientId}','${listingId}', function(){ ${refresh}; })">${busy?'Screening…':(result?'Re-screen with AI':'✦ Screen with AI')}</button>
+      </div>
+      ${result?`<div class="summary-box">
+        <div class="sb-head"><span class="sb-title">AI screening</span></div>
+        <div class="sb-body">${mdLite(result.analysis)}</div>
+        <div class="sb-meta">Screened ${new Date(result.generatedAt).toLocaleString()} · model uses criteria + all intel</div>
+      </div>`:'<div class="muted smaller">Not screened yet. Tap “Screen with AI” to run this listing against the full client + listing intelligence.</div>'}
+      ${notesSectionHtml('showing', 'Post-showing notes')}
+      <div class="group">
+        <h3>Listing details</h3>
+        <div class="specs-grid">
+          <div class="stat"><div class="lbl">Price</div><div class="val">${fmt$(l.price)}</div></div>
+          <div class="stat"><div class="lbl">Bed (+den) / Bath (+powder)</div><div class="val">${bedsLabel(l)} / ${bathsLabel(l)}</div></div>
+          <div class="stat"><div class="lbl">Size</div><div class="val">${l.sizeSqft?(+l.sizeSqft).toLocaleString()+' sf':'—'}</div></div>
+          <div class="stat"><div class="lbl">Price / sf</div><div class="val">${fmt$psf(pricePsf(l))}</div></div>
+          <div class="stat"><div class="lbl">Parking / Locker</div><div class="val">${l.parkingSpaces!=null?l.parkingSpaces:'—'} / ${l.lockers!=null?(l.lockers>0?l.lockers:'none'):'—'}</div></div>
+          <div class="stat"><div class="lbl">CF w/ rent</div><div class="val" style="color:${cfYes.netMonthly>=0?'var(--good)':'var(--bad)'}">${fmtMoneySigned(cfYes.netMonthly)}</div></div>
+        </div>
+        <div class="muted smaller" style="margin-top:8px">${esc(l.city||'')}${l.neighbourhood?' · '+esc(l.neighbourhood):''}${l.building?' · '+esc(l.building):''}${l.mlsNumber?' · MLS '+esc(l.mlsNumber):''}</div>
+      </div>
+      <div style="display:flex; gap:8px; flex-wrap:wrap">
+        <button class="btn ghost" onclick="closeModal(); setTimeout(()=>briefListing('${l.id}','${clientId}'),60)">Full brief</button>
+        <button class="btn ghost" onclick="closeModal(); setTimeout(()=>openListingIntel('${l.id}'),60)">Notes & AI</button>
+        ${l.realmasterUrl?`<button class="btn ghost" onclick="shareListing('${l.id}', event)">Share</button>`:''}
+        <button class="btn ghost danger" onclick="removeListingFromClient('${clientId}','${listingId}')">Remove</button>
+      </div>
+    </div>`,
+    footer: `<button class="btn ghost full" onclick="openClientAt('${clientId}', 2)">Back to client</button>`
+  });
+}
+function removeListingFromClient(clientId, listingId) {
+  const l = state.listings.find(x => x.id === listingId);
+  if (l && l.assignedClientIds) {
+    l.assignedClientIds = l.assignedClientIds.filter(x => x !== clientId);
+    save();
+  }
+  openClientAt(clientId, 2);
 }
 
 let _screenBusy = {};
-function renderScreenCard(c, l) {
-  const result = (c.screenings || {})[l.id];
-  const busy = _screenBusy[c.id + ':' + l.id];
-  const t = c.criteria?.matchThreshold || 70;
-  return `<div class="screen-card" id="screen-${l.id}">
-    <div class="sc-head">
-      <div class="addr">${esc(l.address || 'Untitled')}</div>
-      ${result && result.score!=null ? `<div class="score ${scoreClass(result.score, t)}">${result.score}%</div>` : ''}
-      <button class="btn ghost small ${busy?'gen-btn-busy':''}" onclick="screenListing('${c.id}','${l.id}')">${busy ? 'Screening…' : (result ? 'Re-screen' : '✦ Screen')}</button>
-    </div>
-    ${result ? `<div class="screen-result">
-      <span class="fit-badge fit-${result.fit}">${result.fit} fit</span>
-      <div style="margin-top:6px">${mdLite(result.analysis)}</div>
-      <div class="muted smaller" style="margin-top:6px">Screened ${new Date(result.generatedAt).toLocaleString()}</div>
-    </div>` : ''}
-  </div>`;
-}
-function refreshScreenCard(c, l) {
-  const el = $('#screen-' + l.id);
-  if (el) el.outerHTML = renderScreenCard(c, l);
-}
-async function screenListing(clientId, listingId) {
+async function screenListing(clientId, listingId, onDone) {
   if (!hasClaudeKey()) { toast('Add your Claude API key in Menu → Claude API'); return; }
   const c = state.clients.find(x => x.id === clientId);
   const l = state.listings.find(x => x.id === listingId);
   if (!c || !l) return;
   const bkey = clientId + ':' + listingId;
-  _screenBusy[bkey] = true; refreshScreenCard(c, l);
+  _screenBusy[bkey] = true; if (onDone) onDone();
   try {
     const { system, user } = buildScreeningPrompt(c, l);
     const text = await callClaude(system, user, { maxTokens: 700 });
@@ -2455,7 +2833,7 @@ async function screenListing(clientId, listingId) {
     toast('Screening failed: ' + e.message);
   } finally {
     _screenBusy[bkey] = false;
-    refreshScreenCard(c, l);
+    if (onDone) onDone();
   }
 }
 
@@ -2625,10 +3003,10 @@ function loadSampleData() {
   state.clients.push(cli1, cli2);
 
   state.listings.push(
-    { id:uid(), realmasterUrl:'https://www.realtor.ca/real-estate/sample-1', address:'404-100 Yonge St', city:'Toronto', propertyType:'Condo', price:725000, beds:2, baths:2, sizeSqft:820, maintenanceFee:580, propertyTax:2900, estRentalIncome:3000, quickBrief:'2-bed corner unit, south-facing, 3 min walk to King subway. Tenanted at $3K/mo.', status:'to_show', assignedClientIds:[cli1.id], showings:[], createdAt:new Date().toISOString() },
-    { id:uid(), realmasterUrl:'https://www.realmaster.com/en/sample-2', address:'12 Maple Ave', city:'Markham', propertyType:'Townhouse', price:1199000, beds:3, baths:3, sizeSqft:1800, maintenanceFee:0, propertyTax:4800, estRentalIncome:3500, quickBrief:'End-unit freehold townhouse, finished basement, walk to top-rated school.', status:'to_show', assignedClientIds:[cli2.id], showings:[], createdAt:new Date().toISOString() },
-    { id:uid(), realmasterUrl:'https://housesigma.com/sample-3', address:'1502-555 Bay St', city:'Toronto', propertyType:'Condo', price:649000, beds:1, baths:1, sizeSqft:580, maintenanceFee:520, propertyTax:2400, estRentalIncome:2400, quickBrief:'1+den high-floor, lake view. Smaller than wanted but well under budget.', status:'to_show', assignedClientIds:[cli1.id], showings:[], createdAt:new Date().toISOString() },
-    { id:uid(), realmasterUrl:'https://www.realtor.ca/sample-4', address:'45 Birch Cres', city:'Richmond Hill', propertyType:'Detached', price:1599000, beds:4, baths:3, sizeSqft:2400, maintenanceFee:0, propertyTax:6200, estRentalIncome:0, quickBrief:'Renovated detached, finished basement, big lot. Slight stretch — show as upside option.', status:'to_show', assignedClientIds:[cli2.id], showings:[], createdAt:new Date().toISOString() }
+    { id:uid(), realmasterUrl:'https://www.realtor.ca/real-estate/sample-1', address:'404-100 Yonge St', city:'Toronto', propertyType:'Condo', price:725000, beds:2, baths:2, sizeSqft:820, maintenanceFee:580, propertyTax:2900, estRentalIncome:3000, quickBrief:'2-bed corner unit, south-facing, 3 min walk to King subway. Tenanted at $3K/mo.', status:'to_show', assignedClientIds:[cli1.id], createdAt:new Date().toISOString() },
+    { id:uid(), realmasterUrl:'https://www.realmaster.com/en/sample-2', address:'12 Maple Ave', city:'Markham', propertyType:'Townhouse', price:1199000, beds:3, baths:3, sizeSqft:1800, maintenanceFee:0, propertyTax:4800, estRentalIncome:3500, quickBrief:'End-unit freehold townhouse, finished basement, walk to top-rated school.', status:'to_show', assignedClientIds:[cli2.id], createdAt:new Date().toISOString() },
+    { id:uid(), realmasterUrl:'https://housesigma.com/sample-3', address:'1502-555 Bay St', city:'Toronto', propertyType:'Condo', price:649000, beds:1, baths:1, sizeSqft:580, maintenanceFee:520, propertyTax:2400, estRentalIncome:2400, quickBrief:'1+den high-floor, lake view. Smaller than wanted but well under budget.', status:'to_show', assignedClientIds:[cli1.id], createdAt:new Date().toISOString() },
+    { id:uid(), realmasterUrl:'https://www.realtor.ca/sample-4', address:'45 Birch Cres', city:'Richmond Hill', propertyType:'Detached', price:1599000, beds:4, baths:3, sizeSqft:2400, maintenanceFee:0, propertyTax:6200, estRentalIncome:0, quickBrief:'Renovated detached, finished basement, big lot. Slight stretch — show as upside option.', status:'to_show', assignedClientIds:[cli2.id], createdAt:new Date().toISOString() }
   );
   save(); toast('Sample data loaded'); render();
 }
@@ -3001,6 +3379,18 @@ function notesAccessor(desc) {
       setSummary: (s) => { l.propertySummary = s; },
     };
   }
+  if (desc.kind === 'showing') {
+    // Post-showing notes live on the CLIENT, keyed by listing.
+    const c = state.clients.find(x => x.id === desc.clientId);
+    if (!c.showings) c.showings = {};
+    if (!c.showings[desc.listingId]) c.showings[desc.listingId] = { notes: [], summary: null };
+    const b = c.showings[desc.listingId];
+    return {
+      getNotes: () => (b.notes || (b.notes = [])),
+      getSummary: () => b.summary || null,
+      setSummary: (s) => { b.summary = s; },
+    };
+  }
   // entity (shared)
   if (!state.entities[desc.entityType]) state.entities[desc.entityType] = {};
   const store = state.entities[desc.entityType];
@@ -3109,6 +3499,7 @@ async function genSummary(key) {
   let prompt;
   if (desc.kind === 'client') prompt = buildPersonaPrompt(state.clients.find(c => c.id === desc.clientId));
   else if (desc.kind === 'listing') prompt = buildPropertyPrompt(state.listings.find(l => l.id === desc.listingId));
+  else if (desc.kind === 'showing') prompt = buildShowingPrompt(state.clients.find(c => c.id === desc.clientId), state.listings.find(l => l.id === desc.listingId), notes);
   else prompt = buildEntityPrompt(desc.entityType, desc.entityKey, notes);
   _genBusy[key] = true; refreshNotesSection(key);
   try {
