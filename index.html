@@ -396,6 +396,10 @@
     color: var(--text-soft);
   }
   .seg button.on { background: var(--bg); color: var(--text); box-shadow: 0 1px 2px rgba(0,0,0,0.06); }
+  /* Setup page (Areas & Intel + Mortgage) */
+  .setup-wrap { padding: 14px 16px 0; }
+  .setup-seg { display: flex; width: 100%; margin-bottom: 16px; }
+  .setup-seg button { flex: 1; }
 
   /* Compare */
   .compare-wrap { padding: 16px; overflow-x: auto; -webkit-overflow-scrolling: touch; }
@@ -730,6 +734,9 @@
     <button data-tab="compare" onclick="switchTab('compare')">
       <span class="tab-icon"></span><span class="tab-label">COMPARE</span>
     </button>
+    <button data-tab="setup" onclick="switchTab('setup')">
+      <span class="tab-icon"></span><span class="tab-label">SETUP</span>
+    </button>
   </nav>
 </div>
 
@@ -795,6 +802,7 @@ const DEFAULT_SYNC = {
 let state = loadData();
 let sync = loadSyncConfig();
 let currentTab = 'clients';
+let setupSub = 'areas'; // 'areas' | 'mortgage' — segmented sub-tab on the Setup page
 let compareSelection = [];
 let _filterClientId = '';
 let _filterStatus = '';
@@ -889,6 +897,7 @@ const ICON_PATHS = {
   user: '<path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>',
   home: '<path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/>',
   compare: '<polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/>',
+  sliders: '<line x1="4" y1="8" x2="20" y2="8"/><line x1="4" y1="16" x2="20" y2="16"/><circle cx="9" cy="8" r="2.5"/><circle cx="15" cy="16" r="2.5"/>',
   lock: '<rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>',
   sparkle: '<path d="M12 2l2.2 6.3L20.5 10l-6.3 2.2L12 18l-2.2-5.8L3.5 10l6.3-1.7z"/>',
   cloud: '<path d="M17.5 19a4.5 4.5 0 0 0 0-9 6 6 0 0 0-11.6 2A4 4 0 0 0 6 19z"/>',
@@ -1515,7 +1524,7 @@ async function registerPasskeyForCurrentUser() {
 
 function onAuthSuccess() {
   showAppShell();
-  switchTab('clients');
+  route();
   setSyncStatus(sync.enabled ? 'live' : null);
   if (sync.enabled && sync.gistId && sync.token) pullFromGist(true);
 }
@@ -1806,12 +1815,75 @@ function parseScreeningResponse(text) {
 }
 
 // ---- Routing / tabs --------------------------------
-function switchTab(t) {
+// ---- Hash router -----------------------------------
+// URL is the source of truth. User actions render a view AND push a hash;
+// browser back/forward fire popstate -> route() re-renders from the hash.
+// Render functions sync the hash via _syncHash (no-op when it already matches),
+// so calling them directly (taps) or from route() (back/forward) both stay in sync.
+const MAIN_TABS = ['clients','listings','compare','setup'];
+
+function _tabHash(t) {
+  return t === 'setup' ? ('setup' + (setupSub === 'mortgage' ? '/mortgage' : '')) : t;
+}
+function _syncHash(h, replace) {
+  const target = '#' + h;
+  if (location.hash === target) return;
+  if (replace) history.replaceState(null, '', target);
+  else history.pushState(null, '', target);
+}
+function _hideModal() {
+  $('#modal-backdrop').classList.remove('open');
+  $('#modal').innerHTML = '';
+  document.body.style.overflow = '';
+}
+// Render a main tab without touching the hash (used by route() + base-tab setup).
+function _renderTab(t) {
   currentTab = t;
-  document.querySelectorAll('nav.tabs button').forEach(b=>{
+  _hideModal();
+  document.querySelectorAll('nav.tabs button').forEach(b => {
     b.classList.toggle('active', b.dataset.tab === t);
   });
   render();
+}
+// Ensure a tab is rendered behind a modal route (deep links / fresh load).
+function _ensureBase(tab) {
+  const want = tab || (MAIN_TABS.includes(currentTab) ? currentTab : 'clients');
+  if (currentTab !== want || !$('#main').innerHTML.trim()) _renderTab(want);
+}
+function _openSettings(key) {
+  if (key === 'account') openAuthPage();
+  else if (key === 'claude') openClaudePage();
+  else if (key === 'sync') openSyncPage();
+  else if (key === 'backup') openBackupPage();
+  else if (key === 'install') openInstallPage();
+  else if (key === 'about') openAboutPage();
+  else openMenu();
+}
+function route() {
+  const raw = (location.hash || '').replace(/^#\/?/, '');
+  const parts = raw.split('/').filter(Boolean).map(p => { try { return decodeURIComponent(p); } catch (e) { return p; } });
+  const head = parts[0] || 'clients';
+  if (MAIN_TABS.includes(head)) {
+    if (head === 'setup') setupSub = parts[1] === 'mortgage' ? 'mortgage' : 'areas';
+    _renderTab(head);
+    return;
+  }
+  if (head === 'client' && parts[1]) {
+    _ensureBase('clients');
+    if (parts[2] != null) _clientCtx = { id: parts[1], tab: +parts[2] || 0 };
+    openClient(parts[1]);
+    return;
+  }
+  if (head === 'listing' && parts[1]) { _ensureBase('listings'); briefListing(parts[1]); return; }
+  if (head === 'entity' && parts[1] && parts[2]) { setupSub = 'areas'; _ensureBase('setup'); openEntityPage(parts[1], parts[2]); return; }
+  if (head === 'menu') { _ensureBase(); openMenu(); return; }
+  if (head === 'settings' && parts[1]) { _ensureBase(); _openSettings(parts[1]); return; }
+  _renderTab('clients');
+}
+
+function switchTab(t) {
+  _renderTab(t);
+  _syncHash(_tabHash(t));
 }
 function onFabClick() {
   if (currentTab === 'clients') editClient(null);
@@ -1824,11 +1896,12 @@ function render() {
   const main = $('#main');
   const title = $('#page-title');
   const fab = $('#fab');
-  fab.style.display = currentTab === 'compare' ? 'none' : 'flex';
+  fab.style.display = (currentTab === 'compare' || currentTab === 'setup') ? 'none' : 'flex';
 
   if (currentTab === 'clients') { title.textContent = 'Clients'; main.innerHTML = renderClients(); }
   else if (currentTab === 'listings') { title.textContent = 'Listings'; main.innerHTML = renderListings(); }
   else if (currentTab === 'compare') { title.textContent = 'Compare'; main.innerHTML = renderCompare(); }
+  else if (currentTab === 'setup') { title.textContent = 'Setup'; main.innerHTML = renderSetup(); }
   updateCommentBar();
 }
 
@@ -2061,6 +2134,7 @@ function openClient(id) {
       <button class="btn" onclick="editClient('${c.id}')">Edit</button>
     `
   });
+  _syncHash('client/' + id + (_clientCtx.tab ? '/' + _clientCtx.tab : ''));
   setTimeout(attachClientSwipe, 60);
 }
 function openClientAt(id, tab) { _clientCtx = { id, tab }; openClient(id); }
@@ -2070,6 +2144,7 @@ function switchClientTab(i) {
   const wrap = $('#ctab-panel');
   if (wrap) wrap.innerHTML = renderClientTabPanel(_clientCtx.id, i);
   document.querySelectorAll('#ctabs .ctab').forEach((b, idx) => b.classList.toggle('on', idx === i));
+  _syncHash('client/' + _clientCtx.id + (i ? '/' + i : ''), true);
 }
 function attachClientSwipe() {
   const wrap = $('#ctab-panel');
@@ -2948,6 +3023,7 @@ function briefListing(id, clientId) {
       ${l.realmasterUrl ? `<button class="btn" onclick="shareListing('${l.id}', event)">Share</button>` : ''}
     `
   });
+  _syncHash('listing/' + id);
 }
 
 // ---- Add-listing search picker ---------------------
@@ -3123,7 +3199,21 @@ function setListingEntity(listingId, type, inputId) {
   openListingIntel(listingId);
 }
 
-function openEntityBrowser(focusType) {
+// ---- Setup tab (Areas & Intel + Mortgage defaults) ----
+function renderSetup() {
+  const seg = `<div class="seg setup-seg">
+    <button class="${setupSub==='areas'?'on':''}" onclick="setSetupSub('areas')">Areas &amp; Intel</button>
+    <button class="${setupSub==='mortgage'?'on':''}" onclick="setSetupSub('mortgage')">Mortgage</button>
+  </div>`;
+  const body = setupSub === 'mortgage' ? renderMortgageBody() : renderAreasIntelBody();
+  return `<div class="setup-wrap">${seg}${body}</div>`;
+}
+function setSetupSub(s) {
+  setupSub = s;
+  render();
+  _syncHash(_tabHash('setup'), true);
+}
+function renderAreasIntelBody(focusType) {
   const types = ENTITY_TYPES;
   const groups = types.map(type => {
     const keys = distinctEntityKeys(type);
@@ -3149,15 +3239,33 @@ function openEntityBrowser(focusType) {
       </div>
     </details>`;
   }).join('');
-  showModal({
-    title: 'Areas & Intel',
-    onBack: 'openMenu()',
-    body: `<div class="stack">
-      <div class="group-sub">Notes & AI summaries for neighbourhoods, communities, buildings, cities and developers — shared across every listing with the same value. Edit them here at a high level, or from any listing's Notes & AI screen.</div>
-      ${groups}
-    </div>`,
-    footer: `<button class="btn ghost full" onclick="openMenu()">Back</button>`
-  });
+  return `<div class="stack">
+    <div class="group-sub">Notes & AI summaries for neighbourhoods, communities, buildings, cities and developers — shared across every listing with the same value. Edit them here at a high level, or from any listing's Notes & AI screen.</div>
+    ${groups}
+  </div>`;
+}
+function renderMortgageBody() {
+  const s = state.settings;
+  return `<div class="stack">
+    <div class="group-sub">Used by the cashflow calculator for listings with no client context, and as the starting point for each new client. Individual clients can override these in their profile.</div>
+    <div class="row2">
+      <div class="field"><label>Down %</label><input id="s-down" type="number" inputmode="decimal" value="${s.defaultDownPct}"></div>
+      <div class="field"><label>Rate % (annual)</label><input id="s-rate" type="number" step="0.01" inputmode="decimal" value="${s.defaultMortgageRate}"></div>
+    </div>
+    <div class="row2">
+      <div class="field"><label>Amortization (years)</label><input id="s-amort" type="number" inputmode="numeric" value="${s.defaultAmortYears}"></div>
+      <div class="field"><label>Insurance / mo ($)</label><input id="s-ins" type="number" inputmode="numeric" value="${s.defaultInsuranceMonthly}"></div>
+    </div>
+    <div style="margin-top:4px"><button class="btn" onclick="saveMortgageDefaults()">Save mortgage defaults</button></div>
+  </div>`;
+}
+function saveMortgageDefaults() {
+  state.settings.defaultDownPct = +$('#s-down').value || 20;
+  state.settings.defaultMortgageRate = +$('#s-rate').value || 5;
+  state.settings.defaultAmortYears = +$('#s-amort').value || 25;
+  state.settings.defaultInsuranceMonthly = +$('#s-ins').value || 100;
+  save();
+  toast('Mortgage defaults saved');
 }
 function addEntityKey(type, inputId) {
   const v = ($('#' + inputId)?.value || '').trim();
@@ -3172,14 +3280,15 @@ function openEntityPage(type, key) {
   const usedBy = state.listings.filter(l => entityValueOf(l, type) === key);
   showModal({
     title: key,
-    onBack: `openEntityBrowser('${type}')`,
+    onBack: `closeModal()`,
     body: `<div class="stack">
       <div class="group-sub">${ENTITY_TYPE_LABEL[type]} · shared by ${usedBy.length} listing${usedBy.length===1?'':'s'}</div>
       ${notesSectionHtml('entity', ENTITY_TYPE_LABEL[type] + ' notes')}
       ${usedBy.length ? `<div class="group"><h3>Listings here</h3>${usedBy.map(l => `<div class="feed-item" style="margin:0 -14px; padding:10px 14px" onclick="closeModal(); setTimeout(()=>briefListing('${l.id}'),60)"><div class="body"><h3 style="font-size:14px">${esc(l.address||'Untitled')}</h3><div class="muted smaller">${fmt$short(l.price)} · ${esc(l.city||'')}</div></div></div>`).join('')}</div>` : ''}
     </div>`,
-    footer: `<button class="btn ghost full" onclick="openEntityBrowser('${type}')">Back</button>`
+    footer: `<button class="btn ghost full" onclick="closeModal()">Back</button>`
   });
+  _syncHash('entity/' + encodeURIComponent(type) + '/' + encodeURIComponent(key));
 }
 
 // ---- Listing intel (notes + AI) --------------------
@@ -3276,11 +3385,9 @@ function openMenu() {
   const claudeCfg = loadClaudeCfg();
   const entityTotal = ENTITY_TYPES.reduce((a,t)=>a+distinctEntityKeys(t).length, 0);
   const menu = [
-    { icon:'map', title:'Areas & Intel', sub: entityTotal ? (entityTotal + ' tracked: neighbourhoods, buildings, developers…') : 'Neighbourhood / building / developer notes', fn:'openEntityBrowser()' },
     { icon:'lock', title:'Account & Security', sub: sess ? esc(sess.email) : 'Google Sign-In + Face ID', fn:'openAuthPage()' },
     { icon:'sparkle', title:'Claude API', sub: claudeCfg.apiKey ? ('On — ' + (CLAUDE_MODELS[claudeCfg.model]||claudeCfg.model)) : 'Off — add key for AI features', fn:'openClaudePage()' },
     { icon:'cloud', title:'Cloud Sync', sub: sync.enabled ? 'On — GitHub Gist' : 'Off', fn:'openSyncPage()' },
-    { icon:'bank', title:'Mortgage Defaults', sub:'Global cashflow assumptions', fn:'openMortgagePage()' },
     { icon:'save', title:'Backup & Data', sub:`${state.clients.length} clients · ${state.listings.length} listings`, fn:'openBackupPage()' },
     { icon:'install', title:'Install App', sub:'Add to home screen', fn:'openInstallPage()' },
     { icon:'info', title:'About', sub:'Version & roadmap', fn:'openAboutPage()' },
@@ -3309,6 +3416,7 @@ function openMenu() {
     </div>`,
     footer: `<button class="btn ghost full" onclick="closeModal()">Close</button>`
   });
+  _syncHash('menu');
 }
 
 // ---- Settings pages --------------------------------
@@ -3354,6 +3462,7 @@ function openAuthPage() {
     </div>`,
     footer: `<button class="btn ghost" onclick="openMenu()">Back</button><div style="flex:1"></div><button class="btn" onclick="saveAuthSettings()">Save</button>`
   });
+  _syncHash('settings/account');
 }
 
 function openClaudePage() {
@@ -3393,6 +3502,7 @@ function openClaudePage() {
     </div>`,
     footer: `<button class="btn ghost" onclick="openMenu()">Back</button><div style="flex:1"></div><button class="btn" onclick="saveClaudeSettings()">Save</button>`
   });
+  _syncHash('settings/claude');
 }
 function saveClaudeSettings() {
   const apiKey = $('#cl-key').value.trim();
@@ -3451,27 +3561,7 @@ function openSyncPage() {
     </div>`,
     footer: `<button class="btn ghost" onclick="openMenu()">Back</button><div style="flex:1"></div><button class="btn" onclick="saveSyncSettings()">Save</button>`
   });
-}
-
-function openMortgagePage() {
-  const s = state.settings;
-  showModal({
-    title: 'Mortgage Defaults',
-    feedbackPage: 'settings',
-    onBack: 'openMenu()',
-    body: `<div class="stack">
-      <div class="group-sub">Used by the cashflow calculator for listings with no client context, and as the starting point for each new client. Individual clients can override these in their profile.</div>
-      <div class="row2">
-        <div class="field"><label>Down %</label><input id="s-down" type="number" inputmode="decimal" value="${s.defaultDownPct}"></div>
-        <div class="field"><label>Rate % (annual)</label><input id="s-rate" type="number" step="0.01" inputmode="decimal" value="${s.defaultMortgageRate}"></div>
-      </div>
-      <div class="row2">
-        <div class="field"><label>Amortization (years)</label><input id="s-amort" type="number" inputmode="numeric" value="${s.defaultAmortYears}"></div>
-        <div class="field"><label>Insurance / mo ($)</label><input id="s-ins" type="number" inputmode="numeric" value="${s.defaultInsuranceMonthly}"></div>
-      </div>
-    </div>`,
-    footer: `<button class="btn ghost" onclick="openMenu()">Back</button><div style="flex:1"></div><button class="btn" onclick="saveSettings()">Save</button>`
-  });
+  _syncHash('settings/sync');
 }
 
 function openBackupPage() {
@@ -3494,6 +3584,7 @@ function openBackupPage() {
     </div>`,
     footer: `<button class="btn ghost full" onclick="openMenu()">Back</button>`
   });
+  _syncHash('settings/backup');
 }
 
 function openInstallPage() {
@@ -3517,6 +3608,7 @@ function openInstallPage() {
     </div>`,
     footer: `<button class="btn ghost full" onclick="openMenu()">Back</button>`
   });
+  _syncHash('settings/install');
 }
 
 function openAboutPage() {
@@ -3540,6 +3632,7 @@ function openAboutPage() {
     </div>`,
     footer: `<button class="btn ghost full" onclick="openMenu()">Back</button>`
   });
+  _syncHash('settings/about');
 }
 
 function saveAuthSettings() {
@@ -3552,13 +3645,6 @@ function saveAuthSettings() {
   if (isAuthEnabled() && !currentSession()) showAuthGate();
 }
 
-function saveSettings() {
-  state.settings.defaultDownPct = +$('#s-down').value || 20;
-  state.settings.defaultMortgageRate = +$('#s-rate').value || 5;
-  state.settings.defaultAmortYears = +$('#s-amort').value || 25;
-  state.settings.defaultInsuranceMonthly = +$('#s-ins').value || 100;
-  save(); closeModal(); render(); toast('Settings saved');
-}
 
 async function saveSyncSettings() {
   const enabled = $('#s-sync').checked;
@@ -3902,9 +3988,8 @@ function showModal({ title, body, footer, onBack, feedbackPage }) {
   document.body.style.overflow = 'hidden';
 }
 function closeModal() {
-  $('#modal-backdrop').classList.remove('open');
-  $('#modal').innerHTML = '';
-  document.body.style.overflow = '';
+  _hideModal();
+  _syncHash(_tabHash(currentTab), true);
 }
 function onBackdropClick(e) {
   if (e.target.id === 'modal-backdrop') closeModal();
@@ -3915,14 +4000,14 @@ function boot() {
   applyTheme(loadTheme());
   // Flat icons for static chrome
   const mb = $('#menu-btn'); if (mb) mb.innerHTML = ico('menu');
-  const tabIco = { clients:'user', listings:'home', compare:'compare' };
+  const tabIco = { clients:'user', listings:'home', compare:'compare', setup:'sliders' };
   document.querySelectorAll('nav.tabs button').forEach(b => {
     const span = b.querySelector('.tab-icon'); if (span) span.innerHTML = ico(tabIco[b.dataset.tab] || 'home');
   });
   if (!isAuthEnabled()) {
     // No auth configured yet — open app immediately so user can set things up.
     showAppShell();
-    switchTab('clients');
+    route();
     setSyncStatus(sync.enabled ? 'live' : null);
     if (sync.enabled && sync.gistId && sync.token) pullFromGist(true);
     return;
@@ -3934,6 +4019,8 @@ function boot() {
   }
 }
 boot();
+// Browser back/forward → re-render from the hash.
+window.addEventListener('popstate', route);
 // ESC to close modal
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape') { closeModal(); closeFeedback(); } });
 
